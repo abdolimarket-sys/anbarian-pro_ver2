@@ -107,6 +107,68 @@ export function exportFullExcel(): void {
   exportExcel(false);
 }
 
+/** خروجی مستقل کالاهای شمارش‌شده؛ فقط خواندن داده‌ها و بدون تغییر موجودی/شمارش. */
+export function exportCountedProductsExcel(): void {
+  const doubleCount = isDoubleCount();
+  // در شمارش دوفازی، وجود حداقل یک مقدار ثبت‌شده در هر یک از دو فاز
+  // به معنی شمارش‌شدن کالا است؛ مقدار نهایی نمایشی، فاز ۲ و در نبود آن فاز ۱ است.
+  const list = activeList().filter((p) =>
+    doubleCount ? p.countedQty != null || p.countedQty2 != null : p.countedQty != null
+  );
+  if (!list.length) {
+    toast('در انبار انتخاب‌شده کالای شمارش‌شده‌ای برای خروجی وجود ندارد', 'info');
+    return;
+  }
+
+  const headers = [
+    'بارکد', 'کد کالا', 'نام', 'موجودی سیستم', 'تعداد شمارش‌شده', 'مغایرت', 'قیمت', 'محل',
+    ...(doubleCount ? ['شمارش اول', 'شمارش دوم'] : []),
+  ];
+  const rows: unknown[][] = list.map((p) => {
+    const effectiveCount = doubleCount
+      ? (p.countedQty2 != null ? p.countedQty2 : p.countedQty)
+      : p.countedQty;
+    const diff = effectiveCount == null ? '' : effectiveCount - (p.systemQty ?? 0);
+    return [
+      String(p.code ?? '').trim(),
+      String(p.sku ?? '').trim(),
+      p.name ?? '',
+      p.systemQty ?? 0,
+      effectiveCount ?? '',
+      diff,
+      p.price ?? 0,
+      p.location ?? '',
+      ...(doubleCount ? [p.countedQty ?? '', p.countedQty2 ?? ''] : []),
+    ];
+  });
+
+  try {
+    const bytes = buildOfflineXlsx([{
+      name: 'کالاهای شمارش‌شده',
+      rows: [
+        [`انبار: ${settings.currentWarehouse || 'همه'}`, `تاریخ تهیه: ${new Date().toLocaleString('fa-IR')}`],
+        headers,
+        ...rows,
+      ],
+    }]);
+    const filename = `anbarin-counted-products-${dateStr()}.xlsx`;
+    downloadFile(
+      new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+      filename,
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    toast(`خروجی کالاهای شمارش‌شده آماده شد؛ ${list.length} کالا`, 'success');
+    logAudit('export_counted_products_xlsx', {
+      warehouse: settings.currentWarehouse || 'همه',
+      count: list.length,
+      doubleCount,
+    });
+  } catch (error) {
+    console.error('Counted products XLSX export failed', error);
+    toast('ساخت فایل اکسل کالاهای شمارش‌شده ناموفق بود', 'error');
+  }
+}
+
 export function exportAccountingDoc(kind: 'generic' | 'heloo' | 'sepidar' = 'generic'): void {
   const list = activeList().filter(
     (p) => p.countedQty != null && p.countedQty !== p.systemQty

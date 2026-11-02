@@ -14,6 +14,7 @@ import {
 } from './modules/state';
 import { toast, showPage, loadTheme } from './modules/ui';
 import { findProductByCode } from './modules/state';
+import { initLocalAuth } from './modules/local-auth';
 
 // پیام نهایی ذخیره‌سازی فایل در اپ اندروید (پس از انتخاب پوشه و نوشتن موفق).
 window.addEventListener('anbarin:file-saved', (event: Event) => {
@@ -78,6 +79,7 @@ import {
   exportStockAlertsExcel,
   printStockAlerts,
   exportDiffsExcel,
+  exportCountedProductsExcel,
   initAccountingTemplateUI,
   renderCardex,
   exportProductCardexExcel,
@@ -264,6 +266,7 @@ async function bootApp() {
     console.log('[Anbarin] boot source:', source, '| products:', products.length);
 
     renderShell();
+    initLocalAuth();
     initScannerModule();
     setCountChangeListener(() => {
       updateHeader();
@@ -329,7 +332,7 @@ function renderShell() {
         <div class="logo-area">
           <img class="brand-logo" src="./logo.png" alt="لوگوی انبارین" />
           <div class="brand-title"><strong>انبارین</strong>
-          <span class="version">v1.5.0</span>
+          <span class="version">v1.5.1</span>
           <span class="role-badge" id="roleBadge">—</span></div>
         </div>
         <div class="header-stats" id="headerStats"></div>
@@ -429,6 +432,7 @@ function renderShell() {
           <div class="actions" style="margin-top:14px">
             <button class="btn btn-primary btn-block" id="btnCopyReport">📋 کپی خلاصه گزارش</button>
             <button class="btn btn-success btn-block" id="btnExportDiffs">📥 اکسل مغایرت‌ها</button>
+            <button class="btn btn-success btn-block" id="btnExportCountedProducts">📊 اکسل کالاهای شمارش‌شده</button>
             <button class="btn btn-secondary btn-block" id="btnAccGeneric">📒 سند اصلاح (عمومی)</button>
             <button class="btn btn-secondary btn-block" id="btnAccHeloo">📒 قالب هلو</button>
             <button class="btn btn-secondary btn-block" id="btnAccSepidar">📒 قالب سپیدار</button>
@@ -981,6 +985,7 @@ function bindEvents() {
   // Reports
   document.getElementById('btnCopyReport')?.addEventListener('click', () => copyTextReport());
   document.getElementById('btnExportDiffs')?.addEventListener('click', () => exportDiffsExcel());
+  document.getElementById('btnExportCountedProducts')?.addEventListener('click', () => exportCountedProductsExcel());
   document.getElementById('btnAccGeneric')?.addEventListener('click', () => exportAccountingDoc('generic'));
   document.getElementById('btnAccHeloo')?.addEventListener('click', () => exportAccountingDoc('heloo'));
   document.getElementById('btnAccSepidar')?.addEventListener('click', () => exportAccountingDoc('sepidar'));
