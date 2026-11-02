@@ -1,0 +1,95 @@
+name: Build Anbarin APK
+
+"on":
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      HAS_RELEASE_SIGNING: ${{ secrets.ANBARIN_KEYSTORE_BASE64 != '' && secrets.ANBARIN_KEYSTORE_PASSWORD != '' && secrets.ANBARIN_KEY_ALIAS != '' && secrets.ANBARIN_KEY_PASSWORD != '' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install and build web
+        run: |
+          npm ci --registry https://registry.npmjs.org/
+          npm run build
+          test -f dist/index.html
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Prepare Android SDK
+        run: |
+          export ANDROID_HOME=/usr/local/lib/android/sdk
+          export ANDROID_SDK_ROOT=$ANDROID_HOME
+          echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f 2>/dev/null | head -n 1)
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER=$(find "$ANDROID_HOME" -name sdkmanager -type f 2>/dev/null | head -n 1)
+          fi
+          echo "sdkmanager=$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/tmp/lic.txt || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Sync Capacitor
+        run: npx cap sync android
+
+      - name: Build debug APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Prepare persistent release signing key
+        if: ${{ env.HAS_RELEASE_SIGNING == 'true' }}
+        env:
+          ANBARIN_KEYSTORE_BASE64: ${{ secrets.ANBARIN_KEYSTORE_BASE64 }}
+          ANBARIN_KEYSTORE_PASSWORD: ${{ secrets.ANBARIN_KEYSTORE_PASSWORD }}
+          ANBARIN_KEY_ALIAS: ${{ secrets.ANBARIN_KEY_ALIAS }}
+          ANBARIN_KEY_PASSWORD: ${{ secrets.ANBARIN_KEY_PASSWORD }}
+        run: |
+          echo "$ANBARIN_KEYSTORE_BASE64" | base64 --decode > "$GITHUB_WORKSPACE/android/anbarin-release.jks"
+          echo "ANBARIN_KEYSTORE_PATH=$GITHUB_WORKSPACE/android/anbarin-release.jks" >> "$GITHUB_ENV"
+          echo "ANBARIN_KEYSTORE_PASSWORD=$ANBARIN_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
+          echo "ANBARIN_KEY_ALIAS=$ANBARIN_KEY_ALIAS" >> "$GITHUB_ENV"
+          echo "ANBARIN_KEY_PASSWORD=$ANBARIN_KEY_PASSWORD" >> "$GITHUB_ENV"
+
+      - name: Build signed release APK
+        if: ${{ env.HAS_RELEASE_SIGNING == 'true' }}
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Upload signed release APK
+        if: ${{ env.HAS_RELEASE_SIGNING == 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: anbarin-release-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+
+      - name: Upload debug APK (test only; not for customer updates)
+        uses: actions/upload-artifact@v7
+        with:
+          name: anbarin-debug-apk-test-only
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
