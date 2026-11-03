@@ -206,6 +206,14 @@ export async function persistAppState(state: AppState): Promise<StorageBackend> 
     try {
       const previous = await idbGet<unknown>('autobackup');
       if (isStateSnapshot(previous)) await idbPut('autobackup_prev', previous);
+      // نگهداری پنج نسخه زمان‌دار مستقل برای بازیابی از خطاهای چند ذخیره اخیر.
+      const historyRaw = await idbGet<unknown>('autobackup_history');
+      const history = Array.isArray(historyRaw) ? historyRaw.filter(isStateSnapshot) : [];
+      if (isStateSnapshot(previous) && snapshotTime(previous) !== snapshotTime(full)) history.push(previous);
+      const unique = new Map<number, typeof full>();
+      for (const item of history) unique.set(snapshotTime(item), item as typeof full);
+      const retained = [...unique.values()].sort((a, b) => snapshotTime(a) - snapshotTime(b)).slice(-5);
+      await idbPut('autobackup_history', retained);
       await idbPut('autobackup', full);
     } catch (backupError) {
       // ذخیره اصلی موفق است؛ خطای پشتیبان نباید موفقیت ذخیره اصلی را پنهان کند.
@@ -252,6 +260,10 @@ export async function loadAppState(): Promise<{ state: Partial<AppState>; source
   catch (e) { console.warn('autobackup read failed', e); }
   try { addCandidate(await idbGet<unknown>('autobackup_prev'), 'idb-autobackup-previous'); }
   catch (e) { console.warn('previous autobackup read failed', e); }
+  try {
+    const history = await idbGet<unknown>('autobackup_history');
+    if (Array.isArray(history)) history.forEach((item, index) => addCandidate(item, `idb-autobackup-history-${index + 1}`));
+  } catch (e) { console.warn('backup history read failed', e); }
 
   // مهاجرت از نسخه‌های قدیمی که فقط فهرست کالا را در localStorage داشتند.
   try {

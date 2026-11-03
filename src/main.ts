@@ -17,6 +17,8 @@ import { findProductByCode } from './modules/state';
 import { initLocalAuth } from './modules/local-auth';
 import { initAccountingUI } from './modules/accounting-ui';
 import { initAccountingCommerceUI } from './modules/accounting-commerce-ui';
+import { initAccountingReportsUI } from './modules/accounting-reports';
+import { renderDataHealth } from './modules/data-health';
 
 // پیام نهایی ذخیره‌سازی فایل در اپ اندروید (پس از انتخاب پوشه و نوشتن موفق).
 window.addEventListener('anbarin:file-saved', (event: Event) => {
@@ -134,6 +136,7 @@ import {
   requirePremium,
   getDeviceId,
 } from './modules/license';
+import { activateOfflineLicenseFile } from './modules/offline-license';
 import {
   filterProductsAdvanced,
   setLocationFilter,
@@ -274,6 +277,7 @@ async function bootApp() {
     initScannerModule();
     await initAccountingUI();
     await initAccountingCommerceUI();
+    await initAccountingReportsUI();
     setCountChangeListener(() => {
       updateHeader();
       updateUndoBtn();
@@ -470,6 +474,16 @@ function renderShell() {
           <p class="hint">هسته حسابداری ایران — کدینگ قابل ویرایش، سال مالی شمسی و اسناد دوطرفه. مبالغ در پایگاه داده به ریال ذخیره می‌شوند.</p>
           <div id="accountingWorkspace"><p class="hint">در حال بارگذاری حسابداری...</p></div>
           <div id="accountingCommerceWorkspace"><p class="hint">در حال بارگذاری فاکتورها و دریافت‌وپرداخت...</p></div>
+          <div id="accountingReportsWorkspace"><p class="hint">در حال بارگذاری گزارش‌های مالی...</p></div>
+        </div>
+      </section>
+
+      <section class="page" id="page-health">
+        <div class="card">
+          <h2>مرکز سلامت داده‌ها — فاز ۶۱</h2>
+          <p class="hint">بررسی ساختار کالاها، بارکدها، اسناد حسابداری، بهای تمام‌شده، پشتیبان و زنجیره لاگ. این بخش فقط گزارش می‌دهد و اطلاعات را تغییر نمی‌دهد.</p>
+          <button class="btn btn-primary" id="btnRunDataHealth" type="button">اجرای دوباره بررسی</button>
+          <div id="dataHealthWorkspace" style="margin-top:12px"><p class="hint">برای شروع بررسی وارد این بخش شوید.</p></div>
         </div>
       </section>
 
@@ -549,8 +563,13 @@ function renderShell() {
             <span style="font-size:.82rem;font-weight:700;color:var(--text-soft)">کلید لایسنس</span>
             <input id="licenseKeyInput" placeholder="ANB3...." style="width:100%;margin-top:4px;direction:ltr;text-align:left;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--text)" />
           </label>
+          <label class="field" style="margin-top:8px;display:block">
+            <span style="font-size:.82rem;font-weight:700;color:var(--text-soft)">فایل لایسنس امضاشده (.anblic)</span>
+            <input id="offlineLicenseFile" type="file" accept=".anblic,.json,application/json" style="width:100%;margin-top:4px" />
+          </label>
           <div class="actions" style="margin-top:10px">
-            <button class="btn btn-primary btn-block" id="btnActivateLicense">فعال‌سازی لایسنس</button>
+            <button class="btn btn-primary btn-block" id="btnActivateOfflineLicense">فعال‌سازی فایل لایسنس</button>
+            <button class="btn btn-primary btn-block" id="btnActivateLicense">فعال‌سازی کلید قدیمی</button>
             <button class="btn btn-secondary btn-block" id="btnDeactivateLicense">حذف لایسنس</button>
             <button class="btn btn-secondary btn-block" id="btnCopyDeviceId">کپی شناسه دستگاه</button>
           </div>
@@ -673,6 +692,7 @@ function renderShell() {
       <button class="nav-item" data-page="products">کالاها</button>
       <button class="nav-item" data-page="reports">گزارش</button>
       <button class="nav-item" data-page="accounting">حسابداری</button>
+      <button class="nav-item" data-page="health">سلامت داده</button>
       <button class="nav-item" data-page="audit">لاگ</button>
       <button class="nav-item" data-page="admin">تنظیمات</button>
     </nav>
@@ -800,6 +820,7 @@ function bindEvents() {
     }
   });
   document.getElementById('auditSearch')?.addEventListener('input', () => renderAuditList());
+  document.getElementById('btnRunDataHealth')?.addEventListener('click', () => { void renderDataHealth(); });
 
   document.getElementById('btnOpenScanner')?.addEventListener('click', () => {
     if (!guardWrite('اسکن')) return;
@@ -956,6 +977,24 @@ function bindEvents() {
     refreshTeamSyncUI();
   });
   document.getElementById('btnCopyTeamCode')?.addEventListener('click', () => copyTeamSessionCode());
+  document.getElementById('btnActivateLicense')?.addEventListener('click', () => activateLicenseFromInput());
+  document.getElementById('btnDeactivateLicense')?.addEventListener('click', () => deactivateLicense());
+  document.getElementById('btnActivateOfflineLicense')?.addEventListener('click', async () => {
+    const input = document.getElementById('offlineLicenseFile') as HTMLInputElement | null;
+    const file = input?.files?.[0];
+    if (!file) { toast('ابتدا فایل .anblic را انتخاب کنید', 'error'); return; }
+    try {
+      const license = await activateOfflineLicenseFile(file);
+      toast('لایسنس آفلاین برای ' + license.customerName + ' فعال شد', 'success');
+      updateLicenseUI();
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'فعال‌سازی لایسنس ناموفق بود', 'error');
+    }
+  });
+  document.getElementById('btnCopyDeviceId')?.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(getDeviceId()); toast('شناسه دستگاه کپی شد', 'success'); }
+    catch { toast('کپی خودکار ممکن نیست؛ شناسه دستگاه را دستی انتخاب کنید', 'error'); }
+  });
   document.getElementById('btnJoinSession')?.addEventListener('click', () => {
     if (joinTeamSession()) {
       refreshTeamSyncUI();
@@ -1062,6 +1101,7 @@ function bindEvents() {
         requestAnimationFrame(() => {
           refreshLists();
           if (page === 'audit') renderAuditList();
+          if (page === 'health') void renderDataHealth();
         });
       }
     });

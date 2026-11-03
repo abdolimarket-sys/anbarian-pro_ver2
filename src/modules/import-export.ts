@@ -8,9 +8,9 @@
  */
 
 import type { Product } from '@/types';
-import { products, settings, inventoryDocs, logAudit, save, rebuildIndex, invalidateStats } from './state';
+import { products, settings, inventoryDocs, auditLog, recentScans, session, logAudit, save, saveSettingsNow, restoreSession, rebuildIndex, invalidateStats } from './state';
 import { toast } from './ui';
-import { setLocationFilter, collectLocations } from './filters-roles';
+import { setLocationFilter, collectLocations, guardPermission } from './filters-roles';
 import { downloadFile, dateStr, generateId, normalizeDigits } from '@/utils/helpers';
 
 declare global {
@@ -213,6 +213,7 @@ export function rowsToCSV(rows: Record<string, unknown>[]): string {
 }
 
 export function exportCSV(onlyDiff = false): void {
+  if (!guardPermission('inventory.export', 'خروجی CSV')) return;
   if (!products.length) {
     toast('کالایی نیست', 'error');
     return;
@@ -232,23 +233,31 @@ export function exportCSV(onlyDiff = false): void {
 
 // ——— JSON backup ———
 
+function backupChecksum(value: unknown): string {
+  const text = JSON.stringify(value);
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) { hash ^= text.charCodeAt(i); hash = Math.imul(hash, 0x01000193); }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
 export function exportJSON(): void {
-  const payload = {
+  if (!guardPermission('inventory.export', 'پشتیبان JSON')) return;
+  const body = {
     type: 'anbar-backup',
-    version: 3,
+    version: 4,
     exportedAt: new Date().toISOString(),
     warehouse: settings.currentWarehouse,
     products,
     settings,
+    session,
+    auditLog,
+    recentScans,
     inventoryDocs,
   };
-  downloadFile(
-    JSON.stringify(payload, null, 2),
-    `anbar-backup-${dateStr()}.json`,
-    'application/json'
-  );
-  toast('پنجره انتخاب محل ذخیره پشتیبان باز می‌شود', 'success');
-  logAudit('export_json', { count: products.length });
+  const payload = { ...body, checksum: backupChecksum(body) };
+  downloadFile(JSON.stringify(payload, null, 2), `anbar-backup-${dateStr()}.json`, 'application/json');
+  toast('پشتیبان کامل آماده ذخیره است', 'success');
+  logAudit('export_json', { count: products.length, version: 4 });
 }
 
 export async function importJSONFile(file: File): Promise<ImportResult | null> {
@@ -260,9 +269,20 @@ export async function importJSONFile(file: File): Promise<ImportResult | null> {
     toast('فایل JSON معتبر نیست', 'error');
     return null;
   }
-  if (!data || !Array.isArray(data.products)) {
+  if (!data || data.type && data.type !== 'anbar-backup' || !Array.isArray(data.products) || !data.products.every((p: any) => p && typeof p === 'object' && !Array.isArray(p))) {
     toast('ساختار پشتیبان نامعتبر است', 'error');
     return null;
+  }
+  if (data.version >= 4 && typeof data.checksum !== 'string') {
+    toast('فایل پشتیبان نسخه ۴ فاقد checksum است', 'error');
+    return null;
+  }
+  if (data.checksum) {
+    const { checksum, ...body } = data;
+    if (typeof checksum !== 'string' || checksum !== backupChecksum(body)) {
+      toast('صحت فایل پشتیبان تأیید نشد؛ فایل تغییر کرده یا خراب است', 'error');
+      return null;
+    }
   }
   const mode = await askImportMode();
   if (!mode) return null;
@@ -273,6 +293,13 @@ export async function importJSONFile(file: File): Promise<ImportResult | null> {
     if (Array.isArray(data.inventoryDocs)) {
       inventoryDocs.splice(0, inventoryDocs.length, ...data.inventoryDocs.filter((d: any) => d && typeof d === 'object' && typeof d.id === 'string' && Array.isArray(d.lines)));
     }
+    if (data.settings && typeof data.settings === 'object' && !Array.isArray(data.settings)) {
+      Object.assign(settings, data.settings);
+      saveSettingsNow();
+    }
+    if (data.session === null || data.session && typeof data.session === 'object') restoreSession(data.session);
+    if (Array.isArray(data.auditLog)) auditLog.splice(0, auditLog.length, ...data.auditLog.slice(-500));
+    if (Array.isArray(data.recentScans)) recentScans.splice(0, recentScans.length, ...data.recentScans.slice(0, 50));
     rebuildIndex();
     save(true);
     invalidateStats();
@@ -454,6 +481,7 @@ function importIdentity(row: ImportRow): string {
 }
 
 export function applyImportRows(rows: ImportRow[], mode: ImportMode): ImportResult {
+  if (!guardPermission('inventory.import', 'ورود اطلاعات')) return { added: 0, updated: 0, skipped: rows.length, total: rows.length };
   if (mode === 'replace') {
     products.length = 0;
   }
@@ -828,6 +856,7 @@ export function buildOfflineXlsx(
 }
 
 export function exportExcel(onlyDiff = false): void {
+  if (!guardPermission('inventory.export', 'خروجی اکسل')) return;
   if (!products.length) {
     toast('کالایی نیست', 'error');
     return;

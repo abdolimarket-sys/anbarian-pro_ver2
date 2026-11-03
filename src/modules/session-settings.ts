@@ -18,6 +18,7 @@ import {
 import { toast } from './ui';
 import { getOperatorName, setOperatorName } from './storage';
 import { clearAllCounts, zeroUncounted, canCount } from './count';
+import { guardPermission } from './filters-roles';
 
 export function getSessionLabel(): string {
   if (!session) return 'جلسه‌ای شروع نشده';
@@ -48,6 +49,7 @@ export function isSessionOpen(): boolean {
 }
 
 export function actionStartSession(): void {
+  if (!guardPermission('session.start', 'شروع جلسه')) return;
   if (!canCount()) {
     toast('نقش مشاهده‌گر اجازه شروع جلسه ندارد', 'error');
     return;
@@ -58,6 +60,7 @@ export function actionStartSession(): void {
 }
 
 export function actionCloseSession(): void {
+  if (!guardPermission('session.close', 'بستن جلسه')) return;
   if (!session || session.closedAt) {
     toast('جلسه‌ای باز نیست', 'info');
     return;
@@ -77,6 +80,7 @@ export function actionZeroUncounted(): void {
 
 /** اعمال تغییرات فرم تنظیمات به state */
 export function applySettingsFromForm(): void {
+  if (!guardPermission('settings.manage', 'ذخیره تنظیمات')) return;
   const g = (id: string) => document.getElementById(id) as HTMLInputElement | HTMLSelectElement | null;
 
   const bool = (id: string, fallback: boolean) => {

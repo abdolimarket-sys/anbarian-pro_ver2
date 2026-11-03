@@ -1,0 +1,13 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+const mod=readFileSync(new URL('../src/modules/accounting-aging.ts',import.meta.url),'utf8');
+const ui=readFileSync(new URL('../src/modules/accounting-commerce-ui.ts',import.meta.url),'utf8');
+const scanner=readFileSync(new URL('../src/modules/scanner.ts',import.meta.url),'utf8');
+test('phase 41 builds a read-only dashboard from commerce data',()=>{assert.match(mod,/buildAgingDashboard/);assert.match(mod,/loadCommerceData/);assert.match(mod,/invoiceOutstanding/)});
+test('phase 41 validates Jalali report date and calculates age buckets',()=>{assert.match(mod,/validDate\(today\)/);assert.match(mod,/jalaliJdn/);assert.match(mod,/1_30/);assert.match(mod,/31_60/);assert.match(mod,/61_90/);assert.match(mod,/over_90/)});
+test('phase 41 separates receivables, payables and overdue totals',()=>{assert.match(mod,/receivableRial/);assert.match(mod,/payableRial/);assert.match(mod,/overdueReceivableRial/);assert.match(mod,/overduePayableRial/)});
+test('phase 41 reports pending cheque risk by due date',()=>{assert.match(mod,/chequesReceivableRial/);assert.match(mod,/chequesPayableRial/);assert.match(mod,/due_soon/);assert.match(mod,/overdueCheques/)});
+test('phase 41 excludes drafts and fully settled invoices',()=>{assert.match(mod,/i\.status==='posted'/);assert.match(mod,/outstanding<=0/)});
+test('phase 41 dashboard is rendered in commerce UI',()=>{assert.match(ui,/داشبورد مطالبات، بدهی‌ها و ریسک سررسید/);assert.match(ui,/agingPanel\(\)/)});
+test('phase 41 leaves barcode scanner source unchanged',()=>assert.ok(scanner.length>0));

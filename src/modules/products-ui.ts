@@ -16,6 +16,7 @@ import {
 import { toast } from './ui';
 import { generateId, normalizeDigits } from '@/utils/helpers';
 import { canCount, guardLocked } from './count';
+import { guardPermission } from './filters-roles';
 
 let editingId: string | null = null;
 let onProductsChanged: (() => void) | null = null;
@@ -125,10 +126,7 @@ function numOrNull(id: string): number | null {
 }
 
 export function openProductModal(id?: string | null, presetCode?: string): void {
-  if (!canCount() && settings.role === 'viewer') {
-    toast('نقش مشاهده‌گر اجازه ویرایش کالا ندارد', 'error');
-    return;
-  }
+  if (!guardPermission('inventory.edit', 'ویرایش کالا')) return;
 
   const modal = ensureModal();
   const title = document.getElementById('productModalTitle');
@@ -212,7 +210,7 @@ export function closeProductModal(): void {
 }
 
 export function saveProductFromForm(): boolean {
-  if (guardLocked()) return false;
+  if (!guardPermission('inventory.edit', 'ذخیره کالا') || guardLocked()) return false;
 
   const name = val('productName');
   if (!name) {
@@ -276,6 +274,7 @@ export function saveProductFromForm(): boolean {
 }
 
 export function deleteProduct(id: string): boolean {
+  if (!guardPermission('inventory.edit', 'حذف کالا')) return false;
   if (guardLocked()) return false;
   if (!confirm('این کالا حذف شود؟')) return false;
   const idx = products.findIndex((x) => x.id === id);

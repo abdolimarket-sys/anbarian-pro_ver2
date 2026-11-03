@@ -700,3 +700,74 @@ select.search-input {
 .local-users-panel p { color: var(--text-soft); font-size: .8rem; margin-bottom: 8px; }
 .local-user-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border-light); font-size: .82rem; }
 .local-user-row span { overflow-wrap: anywhere; }
+
+/* Accounting workspace: compact icon navigation and focused panels */
+.accounting-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(105px, 1fr));
+  gap: 8px;
+  margin: 10px 0 14px;
+  padding: 8px;
+  border: 1px solid var(--border-light);
+  border-radius: 14px;
+  background: var(--bg);
+}
+.accounting-shortcut {
+  display: flex;
+  min-height: 68px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 8px 6px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-soft);
+  font: inherit;
+  font-size: .78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+.accounting-shortcut:hover { background: var(--card); border-color: var(--border); color: var(--text); }
+.accounting-shortcut.is-active { background: var(--card); border-color: var(--primary); color: var(--primary); box-shadow: 0 2px 8px rgba(0,0,0,.04); }
+.accounting-shortcut-icon { display: grid; width: 28px; height: 28px; place-items: center; font-size: 1.25rem; line-height: 1; color: currentColor; }
+.acc-section[hidden], #accountingCommerceWorkspace[hidden], #accountingReportsWorkspace[hidden] { display: none !important; }
+.accounting-inner-card { margin-top: 0 !important; }
+.accounting-overview-hint { margin: 12px 2px 4px; }
+@media (max-width: 520px) {
+  .accounting-shortcuts { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; padding: 6px; }
+  .accounting-shortcut { min-height: 62px; font-size: .7rem; }
+}
+
+/* فاکتور حسابداری حرفه‌ای — فاز ۲۹ */
+.commerce-invoice-card .commerce-lines-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:18px 0 8px;padding-bottom:8px;border-bottom:1px solid var(--border-color,#d8dee8)}
+.commerce-invoice-card .commerce-line{grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px;margin:8px 0}
+.commerce-invoice-card .commerce-line [readonly]{background:var(--surface-muted,#f4f6f8);font-weight:700}
+.commerce-seller-profile{margin:10px 0 16px;padding:12px;border:1px solid var(--border-color,#d8dee8);border-radius:10px}
+.commerce-seller-profile summary{cursor:pointer;font-weight:700}
+.commerce-seller-profile .form-grid{margin-top:12px}
+.commerce-invoice-summary{max-width:520px;margin:14px 0 14px auto;padding:12px;border:1px solid var(--border-color,#d8dee8);border-radius:10px}
+.commerce-invoice-summary>div{display:flex;justify-content:space-between;gap:12px;padding:7px 2px;border-bottom:1px solid var(--border-color,#e5e7eb)}
+.commerce-invoice-summary>div:last-child{border-bottom:0}
+.commerce-invoice-summary .grand{font-size:1.08em;font-weight:800}
+@media(max-width:640px){.commerce-invoice-card .commerce-lines-head{align-items:flex-start;flex-direction:column}.commerce-invoice-summary{max-width:none}}
+
+/* Phase 56 — granular local user permissions */
+.local-permission-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin:12px 0;max-height:42vh;overflow:auto;padding:10px;border:1px solid var(--border);border-radius:10px}
+.local-permission-option{display:flex;align-items:center;gap:8px;padding:8px;border:1px solid var(--border);border-radius:8px;font-size:13px}
+.local-permission-option input{width:18px;height:18px;flex:0 0 auto}
+.local-user-editor-card{width:min(680px,94vw);max-height:90vh;overflow:auto}
+.local-user-editor-actions{display:flex;gap:8px;margin-top:12px}
+.local-user-editor-actions button{flex:1}
+.local-users-panel small{display:block;margin-top:10px;color:var(--muted,#777);line-height:1.7}
+
+/* Phase 61 — read-only data health center */
+.health-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:12px 0}
+.health-summary>div{display:flex;flex-direction:column;gap:3px;padding:12px;border:1px solid var(--border-light);border-radius:10px;background:var(--bg-soft,var(--card))}
+.health-summary b{font-size:1.35rem}.health-summary span{font-size:.78rem;color:var(--text-soft)}
+.health-finding{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 12px;margin:8px 0;border:1px solid var(--border-light);border-right:4px solid var(--border-light);border-radius:9px;background:var(--card)}
+.health-finding p{margin:4px 0 0;font-size:.8rem;color:var(--text-soft)}.health-finding strong{font-size:1.1rem}
+.health-error{border-right-color:#c33}.health-warning{border-right-color:#c58a20}.health-ok{border-right-color:#32966b}
+@media(max-width:520px){.health-summary{grid-template-columns:repeat(3,minmax(0,1fr))}.health-finding{align-items:flex-start}}

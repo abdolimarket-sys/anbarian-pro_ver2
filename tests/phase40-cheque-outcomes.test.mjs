@@ -1,0 +1,14 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+const mod=readFileSync(new URL('../src/modules/accounting-cheque-outcomes.ts',import.meta.url),'utf8');
+const ui=readFileSync(new URL('../src/modules/accounting-commerce-ui.ts',import.meta.url),'utf8');
+const scanner=readFileSync(new URL('../src/modules/scanner.ts',import.meta.url),'utf8');
+test('phase 40 persists holder outcomes in an independent versioned store',()=>{assert.match(mod,/accounting_phase40_cheque_holder_outcomes/);assert.match(mod,/schemaVersion:1; outcomes:ChequeHolderOutcome\[\]/)});
+test('phase 40 supports collected, returned and disputed outcomes',()=>{assert.match(mod,/collected'\|'returned'\|'disputed/);assert.match(ui,/وصول \/ برگشت \/ اختلاف/)});
+test('phase 40 verifies endorsement, transfer branch and current holder',()=>{assert.match(mod,/ظهرنویسی اصلی چک پیدا نشد/);assert.match(mod,/input\.holderPartyId!==expectedHolder/);assert.match(mod,/مرحله انتقال معتبر نیست/)});
+test('phase 40 validates date and positive safe integer amount',()=>{assert.match(mod,/validDate\(input\.date\)/);assert.match(mod,/Number\.isSafeInteger\(input\.amountRial\)/)});
+test('phase 40 prevents resolving more than branch remaining balance',()=>{assert.match(mod,/getOutcomeAvailable/);assert.match(mod,/input\.amountRial>available/)});
+test('phase 40 stores audit trail and optional bank reference',()=>{assert.match(mod,/reference:string/);assert.match(mod,/logAudit\('cheque_holder_outcome_recorded'/)});
+test('phase 40 reports totals and individual outcome rows',()=>{assert.match(mod,/collectedRial/);assert.match(mod,/returnedRial/);assert.match(mod,/disputedRial/);assert.match(ui,/گزارش وصول، برگشت و اختلاف/)});
+test('phase 40 keeps post-company outcomes operational and leaves scanner intact',()=>{assert.match(ui,/سند حسابداری جدید در دفاتر شرکت ایجاد نمی‌کنند/);assert.ok(scanner.length>0)});

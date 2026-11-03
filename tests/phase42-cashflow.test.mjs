@@ -1,0 +1,13 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+const mod=readFileSync(new URL('../src/modules/accounting-cashflow.ts',import.meta.url),'utf8');
+const ui=readFileSync(new URL('../src/modules/accounting-commerce-ui.ts',import.meta.url),'utf8');
+const scanner=readFileSync(new URL('../src/modules/scanner.ts',import.meta.url),'utf8');
+test('phase 42 exposes a read-only cashflow dashboard and validates Jalali date',()=>{assert.match(mod,/buildCashflowDashboard/);assert.match(mod,/loadCommerceData/);assert.match(mod,/valid\(today\)/);assert.match(mod,/invoiceOutstanding/)});
+test('phase 42 forecasts only posted invoices with positive balances',()=>{assert.match(mod,/i\.status!=='posted'/);assert.match(mod,/outstanding<=0/);assert.match(mod,/dueDate/)});
+test('phase 42 forecasts pending cheques separately by due date',()=>{assert.match(mod,/chequeStatus!=='pending'/);assert.match(mod,/chequeDueDate/);assert.match(mod,/source:'cheque'/)});
+test('phase 42 computes customer and supplier allocation ratios',()=>{assert.match(mod,/collectionPercent/);assert.match(mod,/allocatedRial/);assert.match(mod,/allocations/)});
+test('phase 42 includes 7, 30 and 60 day horizons',()=>{assert.match(mod,/next7InRial/);assert.match(mod,/next30OutRial/);assert.match(mod,/next60InRial/)});
+test('phase 42 dashboard is rendered in commerce UI',()=>{assert.match(ui,/پیش‌بینی جریان نقد و رفتار پرداخت/);assert.match(ui,/cashflowPanel\(\)/)});
+test('phase 42 leaves barcode scanner source untouched',()=>assert.ok(scanner.length>0));

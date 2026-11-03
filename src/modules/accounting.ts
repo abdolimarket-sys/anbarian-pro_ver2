@@ -333,3 +333,148 @@ export function closeFiscalPeriod(data: AccountingData, periodId: string): Accou
     fiscalPeriods: data.fiscalPeriods.map((p) => p.id === periodId ? { ...p, status: 'closed', closedAt: now() } : p),
   };
 }
+
+/**
+ * فاز ۲۵: پیش‌نمایش و تهیه اسناد اختتامیه و افتتاحیه.
+ * گروه حساب‌های ۴، ۵ و ۶ به‌عنوان حساب‌های موقت در نظر گرفته می‌شوند؛
+ * حساب سود و زیان انباشته باید توسط مدیر به‌صورت تفصیلی انتخاب شود.
+ */
+export interface FiscalClosingPreview {
+  period: FiscalPeriod;
+  postedEntryCount: number;
+  draftEntryCount: number;
+  temporaryAccounts: Array<{ accountId: string; code: string; title: string; debitRial: number; creditRial: number }>;
+  permanentAccounts: Array<{ accountId: string; code: string; title: string; debitRial: number; creditRial: number }>;
+  profitOrLossRial: number;
+  totalDebitRial: number;
+  totalCreditRial: number;
+  errors: string[];
+}
+
+const isTemporaryAccount = (code: string): boolean => /^[456]/.test(code);
+
+export function previewFiscalClosing(data: AccountingData, periodId: string): FiscalClosingPreview {
+  const period = data.fiscalPeriods.find((item) => item.id === periodId);
+  if (!period) throw new Error('سال مالی پیدا نشد.');
+  const posted = data.journalEntries.filter((entry) => entry.fiscalPeriodId === periodId && entry.status === 'posted');
+  const drafts = data.journalEntries.filter((entry) => entry.fiscalPeriodId === periodId && entry.status === 'draft');
+  const balances = new Map<string, { debit: number; credit: number }>();
+  for (const entry of posted) for (const line of entry.lines) {
+    const current = balances.get(line.accountId) || { debit: 0, credit: 0 };
+    current.debit += line.debitRial;
+    current.credit += line.creditRial;
+    balances.set(line.accountId, current);
+  }
+  const rows = [...balances.entries()].map(([accountId, balance]) => {
+    const account = data.accounts.find((item) => item.id === accountId);
+    if (!account) return null;
+    const net = balance.debit - balance.credit;
+    return {
+      accountId, code: account.code, title: account.title,
+      debitRial: Math.max(0, net), creditRial: Math.max(0, -net),
+    };
+  }).filter((item): item is NonNullable<typeof item> => !!item);
+  const temporaryAccounts = rows.filter((item) => isTemporaryAccount(item.code) && (item.debitRial || item.creditRial));
+  const permanentAccounts = rows.filter((item) => !isTemporaryAccount(item.code) && (item.debitRial || item.creditRial));
+  const temporaryDebit = temporaryAccounts.reduce((sum, item) => sum + item.debitRial, 0);
+  const temporaryCredit = temporaryAccounts.reduce((sum, item) => sum + item.creditRial, 0);
+  const totalDebitRial = rows.reduce((sum, item) => sum + item.debitRial, 0);
+  const totalCreditRial = rows.reduce((sum, item) => sum + item.creditRial, 0);
+  const errors: string[] = [];
+  if (drafts.length) errors.push(`${drafts.length} سند پیش‌نویس تعیین تکلیف نشده است.`);
+  if (period.status !== 'open') errors.push('این سال مالی قبلاً بسته شده است.');
+  if (!Number.isSafeInteger(totalDebitRial) || !Number.isSafeInteger(totalCreditRial)) errors.push('جمع گردش حساب‌ها از محدوده مجاز محاسبات خارج است.');
+  return {
+    period, postedEntryCount: posted.length, draftEntryCount: drafts.length,
+    temporaryAccounts, permanentAccounts,
+    profitOrLossRial: temporaryCredit - temporaryDebit,
+    totalDebitRial, totalCreditRial, errors,
+  };
+}
+
+/** ایجاد سند اختتامیه حساب‌های موقت؛ این تابع فقط پیش‌نویس می‌سازد و چیزی را قطعی نمی‌کند. */
+export function buildFiscalClosingEntry(
+  data: AccountingData,
+  periodId: string,
+  retainedEarningsAccountId: string,
+): AccountingData {
+  const preview = previewFiscalClosing(data, periodId);
+  if (preview.errors.length) throw new Error(preview.errors.join('\n'));
+  if (data.journalEntries.some((entry) => entry.sourceDocumentId === `year-close:${periodId}`)) {
+    throw new Error('سند اختتامیه این سال مالی قبلاً ایجاد شده است.');
+  }
+  const retained = data.accounts.find((account) => account.id === retainedEarningsAccountId && account.isActive && account.level === 'detail');
+  if (!retained) throw new Error('حساب سود و زیان انباشته باید یک حساب تفصیلی فعال باشد.');
+  const lines: JournalLine[] = [];
+  for (const account of preview.temporaryAccounts) {
+    lines.push({
+      id: makeId('line'), accountId: account.accountId,
+      description: 'بستن مانده حساب موقت در پایان سال مالی',
+      debitRial: account.creditRial, creditRial: account.debitRial,
+    });
+  }
+  const debit = lines.reduce((sum, line) => sum + line.debitRial, 0);
+  const credit = lines.reduce((sum, line) => sum + line.creditRial, 0);
+  if (debit > credit) lines.push({ id: makeId('line'), accountId: retained.id, description: 'انتقال سود خالص سال به سود و زیان انباشته', debitRial: 0, creditRial: debit - credit });
+  if (credit > debit) lines.push({ id: makeId('line'), accountId: retained.id, description: 'انتقال زیان خالص سال به سود و زیان انباشته', debitRial: credit - debit, creditRial: 0 });
+  if (!lines.length) throw new Error('برای این سال مالی مانده‌ای جهت بستن وجود ندارد.');
+  const timestamp = now();
+  const entry: JournalEntry = {
+    id: makeId('je'), number: `CLOSE-${periodId}`, fiscalPeriodId: periodId,
+    date: preview.period.endDate, description: `سند اختتامیه سال مالی ${preview.period.title}`,
+    status: 'draft', source: 'closing', sourceDocumentId: `year-close:${periodId}`,
+    lines, createdAt: timestamp, updatedAt: timestamp,
+  };
+  return upsertJournalEntry(data, entry);
+}
+
+/** تهیه سند افتتاحیه سال جدید از مانده حساب‌های دائمی سال قبل، پس از قطعی‌شدن سند اختتامیه. */
+export function buildFiscalOpeningEntry(data: AccountingData, previousPeriodId: string, nextPeriodId: string): AccountingData {
+  const previous = data.fiscalPeriods.find((period) => period.id === previousPeriodId);
+  const next = data.fiscalPeriods.find((period) => period.id === nextPeriodId);
+  if (!previous || !next) throw new Error('سال مالی مبدأ یا مقصد پیدا نشد.');
+  if (previous.status !== 'open') throw new Error('برای تهیه افتتاحیه، سال مالی مبدأ باید هنوز باز باشد.');
+  if (next.status !== 'open') throw new Error('سال مالی مقصد بسته است.');
+  if (next.startDate <= previous.endDate) throw new Error('تاریخ شروع سال جدید باید پس از پایان سال قبل باشد.');
+  const closeId = `year-close:${previousPeriodId}`;
+  const closingEntry = data.journalEntries.find((entry) => entry.sourceDocumentId === closeId);
+  if (!closingEntry || closingEntry.status !== 'posted') throw new Error('ابتدا سند اختتامیه را ایجاد و قطعی کنید.');
+  const openingKey = `year-opening:${previousPeriodId}:${nextPeriodId}`;
+  if (data.journalEntries.some((entry) => entry.sourceDocumentId === openingKey)) throw new Error('سند افتتاحیه این دو سال مالی قبلاً ایجاد شده است.');
+  const preview = previewFiscalClosing(data, previousPeriodId);
+  const lines: JournalLine[] = preview.permanentAccounts.map((account) => ({
+    id: makeId('line'), accountId: account.accountId,
+    description: `انتقال مانده از سال مالی ${previous.title}`,
+    debitRial: account.debitRial, creditRial: account.creditRial,
+  }));
+  const debit = lines.reduce((sum, line) => sum + line.debitRial, 0);
+  const credit = lines.reduce((sum, line) => sum + line.creditRial, 0);
+  if (debit !== credit) throw new Error('مانده حساب‌های دائمی تراز نیست؛ سند اختتامیه و حساب سود و زیان انباشته را بررسی کنید.');
+  if (!lines.length) throw new Error('مانده‌ای برای انتقال به سال مالی جدید وجود ندارد.');
+  const timestamp = now();
+  const entry: JournalEntry = {
+    id: makeId('je'), number: `OPEN-${nextPeriodId}`, fiscalPeriodId: nextPeriodId,
+    date: next.startDate, description: `سند افتتاحیه سال مالی ${next.title}`,
+    status: 'draft', source: 'opening', sourceDocumentId: openingKey,
+    lines, createdAt: timestamp, updatedAt: timestamp,
+  };
+  return upsertJournalEntry(data, entry);
+}
+
+/** بستن نهایی سال فقط پس از قطعی‌شدن اختتامیه و افتتاحیه انجام می‌شود. */
+export function finalizeFiscalYearClose(data: AccountingData, previousPeriodId: string, nextPeriodId: string): AccountingData {
+  const previous = data.fiscalPeriods.find((period) => period.id === previousPeriodId);
+  if (!previous) throw new Error('سال مالی مبدأ پیدا نشد.');
+  if (previous.status === 'closed') throw new Error('این سال مالی قبلاً بسته شده است.');
+  const closing = data.journalEntries.find((entry) => entry.sourceDocumentId === `year-close:${previousPeriodId}`);
+  const opening = data.journalEntries.find((entry) => entry.sourceDocumentId === `year-opening:${previousPeriodId}:${nextPeriodId}`);
+  if (!closing || closing.status !== 'posted') throw new Error('سند اختتامیه هنوز قطعی نشده است.');
+  if (!opening || opening.status !== 'posted') throw new Error('سند افتتاحیه هنوز قطعی نشده است.');
+  const drafts = data.journalEntries.filter((entry) => entry.fiscalPeriodId === previousPeriodId && entry.status === 'draft');
+  if (drafts.length) throw new Error('در سال مالی مبدأ هنوز سند پیش‌نویس وجود دارد.');
+  return {
+    ...data,
+    fiscalPeriods: data.fiscalPeriods.map((period) => period.id === previousPeriodId
+      ? { ...period, status: 'closed', closedAt: now() } : period),
+  };
+}

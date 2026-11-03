@@ -55,6 +55,9 @@ export interface AuditEntry {
   ts: string;
   detail?: Record<string, unknown>;
   operator?: string;
+  /** FNV checksum chain; detects accidental edits, not a cryptographic security boundary. */
+  integrityHash?: string;
+  previousHash?: string;
 }
 
 export interface UndoItem {

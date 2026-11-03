@@ -10,6 +10,7 @@
 
 import { toast } from './ui';
 import { showPage } from './ui';
+import { getOfflineLicense, getOfflineLicenseStatus, deactivateOfflineLicense } from './offline-license';
 
 const LICENSE_SECRET = 'anbar-azar-lic-v3-7f3a9c2e8b1d';
 const TRIAL_DAYS = 14;
@@ -295,7 +296,7 @@ export function getLicenseState(): LicenseState {
 }
 
 export function isPremium(): boolean {
-  return !!getLicenseState().premium;
+  return !!getLicenseState().premium || !!getOfflineLicense();
 }
 
 export function requirePremium(feature?: string): boolean {
@@ -339,17 +340,18 @@ export function activateLicenseFromInput(): boolean {
 export function deactivateLicense(): void {
   if (!confirm('لایسنس حذف شود؟')) return;
   saveStoredLicense(null);
+  deactivateOfflineLicense();
   toast('لایسنس حذف شد', 'info');
   updateLicenseUI();
 }
 
 export function updateLicenseUI(): void {
   const st = getLicenseState();
-  let text = '';
-  if (st.clockTamper) text = '⚠️ تغییر ساعت سیستم — آزمایشی غیرفعال';
-  else if (st.sealBroken) text = '⚠️ لایسنس ذخیره‌شده نامعتبر یا دستکاری‌شده';
-  else if (st.deviceMismatch) text = '⚠️ لایسنس متعلق به دستگاه دیگر است';
-  else if (st.licensed)
+  let text = getOfflineLicenseStatus() || '';
+  if (!text && st.clockTamper) text = '⚠️ تغییر ساعت سیستم — آزمایشی غیرفعال';
+  else if (!text && st.sealBroken) text = '⚠️ لایسنس ذخیره‌شده نامعتبر یا دستکاری‌شده';
+  else if (!text && st.deviceMismatch) text = '⚠️ لایسنس متعلق به دستگاه دیگر است';
+  else if (!text && st.licensed)
     text =
       '✅ لایسنس فعال — ' +
       (st.license?.org || '') +
@@ -358,8 +360,8 @@ export function updateLicenseUI(): void {
       ' | تا ' +
       (st.license?.exp || '') +
       (st.license?.device ? ' | قفل‌دستگاه' : '');
-  else if (st.trialActive) text = '⏳ آزمایشی — ' + st.trialLeft + ' روز باقی';
-  else text = '🔒 آزمایشی تمام — شمارش آزاد؛ خروجی حرفه‌ای نیاز به لایسنس';
+  else if (!text && st.trialActive) text = '⏳ آزمایشی — ' + st.trialLeft + ' روز باقی';
+  else if (!text) text = '🔒 آزمایشی تمام — شمارش آزاد؛ خروجی حرفه‌ای نیاز به لایسنس';
 
   const el = document.getElementById('licenseDetail');
   if (el) el.textContent = text;

@@ -92,68 +92,38 @@ export function isCounter(): boolean {
 
 /** اعمال محدودیت نقش روی دکمه‌ها و فرم‌ها */
 export function applyRoleUI(): void {
-  const viewer = isViewer();
   const admin = isAdmin();
-
-  // دکمه‌هایی که مشاهده‌گر نباید بزند
-  const writeSelectors = [
-    '#btnOpenScanner',
-    '#btnQuickCount',
-    '#btnTakePhoto',
-    '#btnAddProduct',
-    '#btnStartSession',
-    '#btnCloseSession',
-    '#undoBtn',
-    '#btnClearCounts',
-    '#btnZeroUncounted',
-    '#btnApplySystem',
-    '#btnResetToSystem',
-    '#btnImport',
-    '#btnImportTeam',
-    '#btnImportPhotos',
-    '#btnActivateLicense',
-    '#btnDeactivateLicense',
-    '#btnExportTeam',
-    '#qtyConfirm',
-  ];
-
-  writeSelectors.forEach((sel) => {
-    document.querySelectorAll(sel).forEach((el) => {
-      const btn = el as HTMLButtonElement;
-      if (viewer) {
-        btn.disabled = true;
-        btn.title = 'نقش مشاهده‌گر — فقط مشاهده';
-        btn.classList.add('role-locked');
-      } else {
-        if (btn.id === 'undoBtn') return; // undo جدا مدیریت می‌شود
-        btn.disabled = false;
-        btn.title = '';
-        btn.classList.remove('role-locked');
-      }
+  const permissionSelectors: Partial<Record<Permission, string[]>> = {
+    'inventory.read': [],
+    'inventory.count': ['#btnOpenScanner', '#btnQuickCount', '#qtyConfirm', '#btnClearCounts', '#btnZeroUncounted', '#btnApplySystem', '#btnResetToSystem'],
+    'inventory.edit': ['#btnAddProduct', '#btnTakePhoto'],
+    'inventory.import': ['#btnImport', '#btnImportPhotos'],
+    'inventory.export': ['#btnExportExcel', '#btnExportDiff', '#btnExportCsv', '#btnExportJson', '#btnExportPhotos', '#btnExportDiffs', '#btnExportCountedProducts', '#btnExportInventoryDocs', '#btnExportPartial', '#btnExportMergeReport'],
+    'session.start': ['#btnStartSession'],
+    'session.close': ['#btnCloseSession'],
+    'team.sync': ['#btnExportTeam', '#btnImportTeam', '#btnJoinSession', '#btnSyncTeamOnline'],
+    'audit.read': ['#btnExportAudit'],
+    'audit.clear': ['#btnClearAudit'],
+    'license.manage': ['#btnActivateLicense', '#btnDeactivateLicense', '#btnActivateOfflineLicense'],
+    'settings.manage': ['#btnSaveSettings'],
+  };
+  for (const [permission, selectors] of Object.entries(permissionSelectors) as [Permission, string[]][]) {
+    const allowed = authorizeLocally(settings, permission).allowed;
+    for (const selector of selectors) document.querySelectorAll<HTMLButtonElement>(selector).forEach(button => {
+      button.disabled = !allowed;
+      button.title = allowed ? '' : `مجوز لازم: ${permission}`;
+      button.classList.toggle('role-locked', !allowed);
     });
-  });
-
-  // تنظیمات حساس فقط ادمین
-  // انتخاب نقش و ذخیره تنظیمات باید همیشه در دسترس بماند؛ وگرنه با انتخاب نقش غیرمدیر،
-  // امکان برگشت به نقش مدیر از داخل برنامه از بین می‌رود.
-  const adminOnly = ['#btnClearAudit', '#btnDeactivateLicense'];
-  adminOnly.forEach((sel) => {
-    const el = document.querySelector(sel) as HTMLInputElement | HTMLButtonElement | null;
-    if (!el) return;
-    if (!admin) {
-      el.setAttribute('disabled', 'true');
-      el.classList.add('role-locked');
-    } else {
-      el.removeAttribute('disabled');
-      el.classList.remove('role-locked');
-    }
-  });
-
-  const badge = document.getElementById('roleBadge');
-  if (badge) {
-    badge.textContent =
-      settings.role === 'viewer' ? 'مشاهده‌گر' : settings.role === 'counter' ? 'شمارنده' : 'مدیر';
   }
+  // حذف لاگ و مدیریت حساب‌ها فقط برای مدیر مجاز است.
+  ['#btnClearAudit', '#localAddUser'].forEach(selector => document.querySelectorAll<HTMLButtonElement>(selector).forEach(button => {
+    const allowed = authorizeLocally(settings, selector === '#btnClearAudit' ? 'audit.clear' : 'users.manage').allowed;
+    button.disabled = !allowed; button.classList.toggle('role-locked', !allowed);
+  }));
+  const badge = document.getElementById('roleBadge');
+  if (badge) badge.textContent = settings.role === 'viewer' ? 'مشاهده‌گر' : settings.role === 'counter' ? 'شمارنده' : 'مدیر';
+  const usersPanel = document.getElementById('localUsersPanel');
+  if (usersPanel) usersPanel.classList.toggle('role-locked', !authorizeLocally(settings, 'users.manage').allowed);
 }
 
 /** بررسی یک مجوز محلی برای یکسان‌سازی کنترل‌های رابط کاربری.

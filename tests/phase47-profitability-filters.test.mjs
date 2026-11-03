@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+const mod=fs.readFileSync(new URL('../src/modules/accounting-profitability.ts',import.meta.url),'utf8');
+const exp=fs.readFileSync(new URL('../src/modules/accounting-profitability-export.ts',import.meta.url),'utf8');
+const ui=fs.readFileSync(new URL('../src/modules/accounting-commerce-ui.ts',import.meta.url),'utf8');
+test('phase47 defines shared fiscal-period and inclusive date filter contract',()=>{assert.match(mod,/interface ProfitabilityFilter/);assert.match(mod,/fromDate/);assert.match(mod,/toDate/);assert.match(mod,/fiscalPeriodId/);assert.match(mod,/inRange/)});
+test('phase47 applies filters to posted invoice profitability and linked cost movements',()=>{assert.match(mod,/getProfitabilityDashboard\(filter:ProfitabilityFilter/);assert.match(mod,/inRange\(x\.date,filter\)/);assert.match(mod,/ids\.has\(x\.sourceDocumentId\)/)});
+test('phase47 scopes expense journal entries to selected period and date range',()=>{assert.match(mod,/getExpenseAdjustedProfitability\(base\?:ProfitabilityDashboard,filter:ProfitabilityFilter/);assert.match(mod,/journalEntries\.filter/)});
+test('phase47 provides filter controls and validation in profitability panel',()=>{for(const id of ['profitabilityPeriod','profitabilityFrom','profitabilityTo','profitabilityApplyFilter','profitabilityClearFilter'])assert.ok(ui.includes(id));assert.match(ui,/تاریخ شروع نباید بعد از تاریخ پایان باشد/)});
+test('phase47 exports the currently selected filter range to XLSX and PDF',()=>{assert.match(exp,/exportProfitabilityXlsx\(filter:ProfitabilityFilter/);assert.match(exp,/printProfitabilityPdf\(filter:ProfitabilityFilter/);assert.match(ui,/exportProfitabilityXlsx\(profitabilityFilter\)/);assert.match(ui,/printProfitabilityPdf\(profitabilityFilter\)/)});

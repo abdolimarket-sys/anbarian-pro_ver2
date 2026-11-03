@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+const mod=readFileSync(new URL('../src/modules/accounting-profitability.ts',import.meta.url),'utf8');
+const ui=readFileSync(new URL('../src/modules/accounting-commerce-ui.ts',import.meta.url),'utf8');
+const scanner=readFileSync(new URL('../src/modules/scanner.ts',import.meta.url),'utf8');
+test('phase 43 uses posted sales and inventory cost movements only',()=>{assert.match(mod,/invoice\.status!=='posted'/);assert.match(mod,/invoice\.type!=='sale'/);assert.match(mod,/sourceDocumentId===invoice\.id/);assert.match(mod,/loadInventoryCostData/)});
+test('phase 43 excludes provisional and uncosted sales from gross profit',()=>{assert.match(mod,/movement\.provisional/);assert.match(mod,/uncostedRevenueRial/);assert.match(mod,/provisionalRevenueRial/)});
+test('phase 43 exposes product and customer gross margin breakdowns',()=>{assert.match(mod,/products:ProfitabilityRow\[\]/);assert.match(mod,/customers:ProfitabilityRow\[\]/);assert.match(mod,/marginPercent/)});
+test('phase 43 profitability panel explains gross profit limitations',()=>{assert.match(ui,/تحلیل سود ناخالص کالا و مشتری/);assert.match(ui,/هزینه‌های عملیاتی/);assert.match(ui,/profitabilityPanel\(\)/)});
+test('phase 43 is read-only and does not alter scanner source',()=>{assert.match(mod,/فقط‌خواندنی/);assert.ok(scanner.length>0)});

@@ -3,11 +3,11 @@
  * ارتقا: فیلتر، جستجو، خروجی CSV، پاک‌سازی کنترل‌شده
  */
 
-import { auditLog, logAudit, save } from './state';
-import { saveAuditLog } from './storage';
+import { auditLog, logAudit, save, verifyAuditIntegrity } from './state';
 import { toast } from './ui';
 import { formatAuditTime, downloadFile, dateStr, esc } from '@/utils/helpers';
 import { rowsToCSV } from './import-export';
+import { guardPermission } from './filters-roles';
 
 function actionLabel(action: string): string {
   const map: Record<string, string> = {
@@ -37,6 +37,7 @@ function actionLabel(action: string): string {
     backup: 'پشتیبان',
     inventory_doc_create: 'ایجاد سند انبار',
     inventory_doc_approve: 'تأیید سند انبار',
+    audit_log_cleared: 'پاک‌سازی تاریخچه عملیات',
   };
   return map[action] || action;
 }
@@ -122,7 +123,11 @@ export function renderAuditList(containerId = 'auditList', limit = 150): void {
     return;
   }
 
-  el.innerHTML = rows
+  const integrity = verifyAuditIntegrity();
+  const integrityLabel = integrity.valid
+    ? `صحت زنجیره: قابل‌تأیید (${integrity.checked} رویداد جدید، ${integrity.legacy} رویداد قدیمی بدون امضا)`
+    : `هشدار: ناسازگاری زنجیره در ردیف ${integrity.brokenAt! + 1}`;
+  el.innerHTML = `<div class="audit-integrity ${integrity.valid ? 'is-valid' : 'is-broken'}">${esc(integrityLabel)}</div>` + rows
     .map(
       (r) => `
     <div class="audit-item">
@@ -138,6 +143,7 @@ export function renderAuditList(containerId = 'auditList', limit = 150): void {
 }
 
 export function exportAuditCSV(): void {
+  if (!guardPermission('audit.read', 'خروجی تاریخچه فعالیت')) return;
   const rows = getAuditRows(2000).map((r) => ({
     زمان: formatAuditTime(r.ts),
     عملیات: r.label,
@@ -155,10 +161,13 @@ export function exportAuditCSV(): void {
 }
 
 export function clearAuditLog(): void {
+  if (!guardPermission('audit.clear', 'پاک‌سازی تاریخچه فعالیت')) return;
   if (!confirm('تمام لاگ عملیات پاک شود؟ این کار برگشت‌ناپذیر است.')) return;
+  const removedEntries = auditLog.length;
   auditLog.length = 0;
-  saveAuditLog([]);
-  // هم ذخیره محلی لاگ و هم snapshot کامل برنامه را به‌روز کن.
+  // پاک‌سازی نیز خودش به‌عنوان رویداد جدید ثبت می‌شود تا حذف بی‌ردپا نباشد.
+  logAudit('audit_log_cleared', { removedEntries });
+  // snapshot کامل برنامه را به‌روز کن.
   save(true);
   const search = document.getElementById('auditSearch') as HTMLInputElement | null;
   if (search) search.value = '';
@@ -172,6 +181,9 @@ export function ensureAuditStyles(): void {
   const st = document.createElement('style');
   st.id = 'audit-styles';
   st.textContent = `
+    .audit-integrity{padding:8px 10px;margin:8px 0;border-radius:8px;font-size:.78rem;background:var(--bg-soft, #f5f5f5)}
+    .audit-integrity.is-broken{border:1px solid #c33;color:#b42318}
+    .audit-integrity.is-valid{border:1px solid var(--border-light)}
     .audit-item{
       padding:10px 12px;border-bottom:1px solid var(--border-light);
     }

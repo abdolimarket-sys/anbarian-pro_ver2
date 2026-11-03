@@ -59,6 +59,78 @@ export interface MergeReport {
   added: number;
   merged: number;
   skipped: number;
+  conflictCount?: number;
+}
+
+export interface TeamSyncConflictSummary {
+  duplicateIncoming: string[];
+  ambiguousLocal: string[];
+  duplicateTargets: string[];
+  metadataMismatch: string[];
+}
+
+/** Preflight conflict detection; it never mutates application state. */
+export function analyzeTeamSyncConflicts(counts: TeamCountItem[]): TeamSyncConflictSummary {
+  const normalized = (value: unknown) => String(value || '').trim().toLowerCase();
+  const identity = (item: { code?: string; sku?: string; name?: string }) => {
+    if (normalized(item.code)) return 'code:' + normalized(item.code);
+    if (normalized(item.sku)) return 'sku:' + normalized(item.sku);
+    return 'name:' + normalized(item.name);
+  };
+  const duplicateIncoming: string[] = [];
+  const incomingSeen = new Set<string>();
+  for (const item of counts) {
+    const key = identity(item);
+    if (incomingSeen.has(key)) duplicateIncoming.push(key);
+    incomingSeen.add(key);
+  }
+
+  const byCode = new Map<string, Product[]>();
+  const bySku = new Map<string, Product[]>();
+  const byName = new Map<string, Product[]>();
+  const add = (map: Map<string, Product[]>, key: string, product: Product) => {
+    if (!key) return;
+    const group = map.get(key) || [];
+    group.push(product);
+    map.set(key, group);
+  };
+  for (const product of products) {
+    add(byCode, normalized(product.code), product);
+    add(bySku, normalized(product.sku), product);
+    add(byName, normalized(product.name), product);
+  }
+
+  const ambiguousLocal: string[] = [];
+  const metadataMismatch: string[] = [];
+  const duplicateTargets: string[] = [];
+  const targetedProducts = new Set<string>();
+  for (const item of counts) {
+    const code = normalized(item.code);
+    const sku = normalized(item.sku);
+    const name = normalized(item.name);
+    const matches = code ? (byCode.get(code) || []) : sku ? (bySku.get(sku) || []) : (byName.get(name) || []);
+    const key = identity(item);
+    if (matches.length > 1) {
+      ambiguousLocal.push(key);
+      continue;
+    }
+    const local = matches[0];
+    if (!local) continue;
+    if (targetedProducts.has(local.id)) duplicateTargets.push(key);
+    targetedProducts.add(local.id);
+    const localWarehouse = normalized(local.warehouse || settings.currentWarehouse);
+    const incomingWarehouse = normalized(item.warehouse);
+    if (Number(local.systemQty) !== Number(item.systemQty) ||
+        (incomingWarehouse && localWarehouse && incomingWarehouse !== localWarehouse)) {
+      metadataMismatch.push(key);
+    }
+  }
+  return {
+    duplicateIncoming: [...new Set(duplicateIncoming)],
+    ambiguousLocal: [...new Set(ambiguousLocal)],
+    duplicateTargets: [...new Set(duplicateTargets)],
+    metadataMismatch: [...new Set(metadataMismatch)],
+  };
 }
 
 let lastMergeReport: MergeReport | null = null;
@@ -246,6 +318,29 @@ export async function importTeamSyncPack(
       return null;
     }
 
+    if (data.counts.length > 50000 || (data.countTotal !== undefined && data.countTotal !== data.counts.length)) {
+      toast('تعداد اقلام بسته با اطلاعات سربرگ همخوانی ندارد یا بیش از حد مجاز است', 'error');
+      return null;
+    }
+    const conflicts = analyzeTeamSyncConflicts(data.counts);
+    if (conflicts.duplicateIncoming.length) {
+      toast(`بسته ورودی دارای ${conflicts.duplicateIncoming.length} شناسه تکراری است؛ ادغام متوقف شد`, 'error');
+      return null;
+    }
+    if (conflicts.ambiguousLocal.length) {
+      toast(`در دستگاه فعلی ${conflicts.ambiguousLocal.length} شناسه به چند کالا اشاره می‌کند؛ ابتدا کالاهای تکراری را بررسی کنید`, 'error');
+      return null;
+    }
+    if (conflicts.duplicateTargets.length) {
+      toast(`چند ردیف فایل به یک کالای محلی اشاره می‌کنند (${conflicts.duplicateTargets.length})؛ ادغام متوقف شد`, 'error');
+      return null;
+    }
+    if (conflicts.metadataMismatch.length) {
+      const examples = conflicts.metadataMismatch.slice(0, 5).join('، ');
+      const more = conflicts.metadataMismatch.length > 5 ? ' و موارد دیگر' : '';
+      if (!confirm(`هشدار تعارض اطلاعات پایه: ${conflicts.metadataMismatch.length} کالا دارای اختلاف موجودی سیستمی یا انبار هستند (${examples}${more}). روش ادغام انتخاب‌شده «${mergeMode}» فقط روی مقدار شمارش اثر می‌گذارد و اختلاف اطلاعات پایه را حل نمی‌کند. آیا با ثبت این تعارض‌ها و ادامه ادغام موافقید؟`)) return null;
+    }
+
     if (
       session?.id &&
       data.sessionId &&
@@ -339,6 +434,7 @@ export async function importTeamSyncPack(
       added,
       merged,
       skipped,
+      conflictCount: conflicts.metadataMismatch.length,
     };
     lastMergeReport = report;
     try {
@@ -354,9 +450,11 @@ export async function importTeamSyncPack(
       merged,
       mode: mergeMode,
       sessionId: data.sessionId,
+      conflictCount: conflicts.metadataMismatch.length,
+      conflictExamples: conflicts.metadataMismatch.slice(0, 20),
     });
     toast(
-      `ادغام (${mergeMode}): ${matched} بدون تداخل، ${merged} تداخل، ${added} جدید`,
+      `ادغام (${mergeMode}): ${matched} بدون تغییر، ${merged} ادغام، ${added} جدید` + (conflicts.metadataMismatch.length ? ` · هشدار تعارض اطلاعات پایه: ${conflicts.metadataMismatch.length}` : ''),
       'success'
     );
     return report;
@@ -651,10 +749,17 @@ export async function syncTeamOnlineNow(quiet = false): Promise<void> {
       .map(([, value]) => value as RemoteDevicePack);
     const rejectedRemotePacks = remoteEntries.length - all.length - (remoteObject[pack.deviceId] ? 1 : 0);
     const totals = new Map<string, { item: TeamCountItem; q1: number; q2: number }>();
+    const onlineMetadataConflicts = new Set<string>();
     for (const rp of all) for (const c of rp.counts) {
       const key = productKey(c);
       if (key === 'name:') continue;
       const item = totals.get(key) || { item: c, q1: 0, q2: 0 };
+      const firstWarehouse = String(item.item.warehouse || '').trim().toLowerCase();
+      const nextWarehouse = String(c.warehouse || '').trim().toLowerCase();
+      if (Number(item.item.systemQty) !== Number(c.systemQty) ||
+          (firstWarehouse && nextWarehouse && firstWarehouse !== nextWarehouse)) {
+        onlineMetadataConflicts.add(key);
+      }
       if (c.countedQty !== null && c.countedQty !== undefined) item.q1 += Number(c.countedQty) || 0;
       if (c.countedQty2 !== null && c.countedQty2 !== undefined) item.q2 += Number(c.countedQty2) || 0;
       totals.set(key, item);
@@ -699,8 +804,13 @@ export async function syncTeamOnlineNow(quiet = false): Promise<void> {
     }
     try { localStorage.setItem(cacheKey, JSON.stringify(nextCache)); } catch { /* sync still succeeds for this run */ }
     rebuildIndex(); save(true); invalidateStats();
-    logAudit('team_online_sync', { sessionId: pack.sessionId, remoteDevices: all.length, remoteProducts: totals.size });
+    logAudit('team_online_sync', {
+      sessionId: pack.sessionId, remoteDevices: all.length, remoteProducts: totals.size,
+      metadataConflictCount: onlineMetadataConflicts.size,
+      metadataConflictExamples: [...onlineMetadataConflicts].slice(0, 20),
+    });
     setOnlineStatus(`همگام‌سازی موفق · دستگاه‌های دیگر: ${all.length} · کالاهای دریافتی: ${totals.size}` +
+      (onlineMetadataConflicts.size ? ` · هشدار: ${onlineMetadataConflicts.size} تعارض اطلاعات پایه بین دستگاه‌ها` : '') +
       (rejectedRemotePacks ? ` · بسته‌های نامعتبر نادیده گرفته‌شده: ${rejectedRemotePacks}` : '') +
       ` · ${new Date().toLocaleTimeString()}`);
     if (!quiet) toast('همگام‌سازی آنلاین انجام شد', 'success');

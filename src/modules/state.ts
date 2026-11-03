@@ -143,17 +143,55 @@ export function canUndo(): boolean {
 }
 
 // ——— Audit ———
+function stableAuditValue(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableAuditValue).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    return `{${Object.keys(obj).sort().map((key) => `${JSON.stringify(key)}:${stableAuditValue(obj[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
+/** Checksum زنجیره‌ای برای کشف تغییرات تصادفی/خرابی داده؛ جایگزین امضای رمزنگاری‌شده سرور نیست. */
+function auditChecksum(previousHash: string, entry: Omit<AuditEntry, 'integrityHash' | 'previousHash'>): string {
+  const payload = `${previousHash}|${stableAuditValue({ id: entry.id, action: entry.action, ts: entry.ts, detail: entry.detail || {}, operator: entry.operator || '' })}`;
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < payload.length; i++) {
+    hash ^= payload.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+export function verifyAuditIntegrity(): { valid: boolean; checked: number; legacy: number; brokenAt: number | null } {
+  let previousHash: string | null = null;
+  let checked = 0;
+  let legacy = 0;
+  for (let i = 0; i < auditLog.length; i++) {
+    const entry = auditLog[i];
+    if (!entry.integrityHash) { legacy++; continue; }
+    // نخستین رکورد زنجیره ممکن است پیش از آن به علت محدودیت نگهداری حذف شده باشد.
+    if (previousHash === null) previousHash = entry.previousHash || 'legacy';
+    if ((entry.previousHash || 'legacy') !== previousHash) return { valid: false, checked, legacy, brokenAt: i };
+    const expected = auditChecksum(previousHash, entry);
+    if (expected !== entry.integrityHash) return { valid: false, checked, legacy, brokenAt: i };
+    previousHash = entry.integrityHash;
+    checked++;
+  }
+  return { valid: true, checked, legacy, brokenAt: null };
+}
+
 export function logAudit(action: string, detail: Record<string, unknown> = {}): void {
-  auditLog.push({
+  const base = {
     id: generateId('a'),
     action,
     ts: new Date().toISOString(),
     detail,
     operator: getOperatorName(),
-  });
-  if (auditLog.length > AUDIT_MAX) {
-    auditLog = auditLog.slice(-AUDIT_MAX);
-  }
+  };
+  const previousHash = auditLog.length ? (auditLog[auditLog.length - 1].integrityHash || 'legacy') : 'legacy';
+  auditLog.push({ ...base, previousHash, integrityHash: auditChecksum(previousHash, base) });
+  if (auditLog.length > AUDIT_MAX) auditLog = auditLog.slice(-AUDIT_MAX);
   saveAuditLog(auditLog, AUDIT_MAX);
 }
 
@@ -201,6 +239,12 @@ export function save(immediate = false): void {
 
 export function saveSettingsNow(): void {
   saveSettings(settings);
+  save(true);
+}
+
+/** بازیابی جلسه از فایل پشتیبان معتبر؛ وضعیت مرکزی و ذخیره‌سازی را همگام می‌کند. */
+export function restoreSession(value: Session | null): void {
+  session = value && typeof value === 'object' ? value : null;
   save(true);
 }
 

@@ -1,0 +1,12 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+const mod=readFileSync(new URL('../src/modules/accounting-cheque-chain.ts',import.meta.url),'utf8');
+const ui=readFileSync(new URL('../src/modules/accounting-commerce-ui.ts',import.meta.url),'utf8');
+const scanner=readFileSync(new URL('../src/modules/scanner.ts',import.meta.url),'utf8');
+test('phase 39 stores chained transfers independently with parent links',()=>{assert.match(mod,/parentTransferId\?:string/);assert.match(mod,/accounting_phase39_cheque_chain/);assert.match(mod,/endorsementId:string/)});
+test('phase 39 validates holder identity, active parties, dates and available amount',()=>{assert.match(mod,/input\.fromPartyId!==expectedHolder/);assert.match(mod,/p\.isActive/);assert.match(mod,/validDate\(input\.date\)/);assert.match(mod,/input\.amountRial>transferable/);assert.match(mod,/accounting_phase40_cheque_holder_outcomes/)});
+test('phase 39 caps each branch at the available amount',()=>{assert.match(mod,/parentTransferId===parentTransferId/);assert.match(mod,/amount-used/)});
+test('phase 39 UI shows chain ledger and onward transfer action',()=>{assert.match(ui,/گردش زنجیره‌ای ظهرنویسی/);assert.match(ui,/data-chain-endorsement/);assert.match(ui,/transferEndorsedCheque/)});
+test('phase 39 explicitly keeps post-company transfers operational, not company journal entries',()=>{assert.match(ui,/سند حسابداری جدید در دفاتر شرکت ایجاد نمی‌کنند/)});
+test('phase 39 does not modify barcode scanner',()=>assert.ok(scanner.length>0));

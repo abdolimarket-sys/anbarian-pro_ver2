@@ -12,23 +12,33 @@ export type InvoiceType = 'sale' | 'purchase';
 export type CommercialStatus = 'draft' | 'posted';
 export interface AccountingParty {
   id: string; type: PartyType; name: string; nationalId: string; phone: string; address: string;
+  economicCode?: string; registrationNumber?: string; postalCode?: string;
   isActive: boolean; createdAt: string; updatedAt: string;
 }
 export interface CommercialInvoiceLine {
-  id: string; description: string; quantityMilli: number; unitPriceRial: number; totalRial: number; productId?: string; warehouse?: string;
+  id: string; description: string; quantityMilli: number; unitPriceRial: number; totalRial: number; productId?: string; warehouse?: string; unit?: string; discountRial?: number;
 }
 export interface CommercialInvoice {
   id: string; type: InvoiceType; number: string; date: string; fiscalPeriodId: string; partyId: string;
-  description: string; lines: CommercialInvoiceLine[]; netRial: number; taxRial: number; grossRial: number;
+  description: string; lines: CommercialInvoiceLine[]; netRial: number; taxRial: number; grossRial: number; taxRateBps?: number;
+  dueDate?: string; paymentTerms?: string; notes?: string;
   status: CommercialStatus; journalEntryId?: string; createdAt: string; updatedAt: string;
 }
+export type SettlementMethod = 'cash'|'bank'|'card'|'transfer'|'cheque';
+export type ChequeStatus = 'pending'|'cleared'|'bounced'|'void';
+export interface InvoiceAllocation { invoiceId: string; amountRial: number; }
 export interface CashTransaction {
   id: string; type: 'receipt' | 'payment'; number: string; date: string; fiscalPeriodId: string;
   partyId: string; cashAccountId: string; amountRial: number; description: string;
   journalEntryId: string; createdAt: string;
+  method?: SettlementMethod; allocations?: InvoiceAllocation[];
+  chequeNumber?: string; chequeBank?: string; chequeDueDate?: string; chequeStatus?: ChequeStatus;
+  clearingJournalEntryId?: string;
 }
+export interface ChequeEndorsement { id:string; transactionId:string; toPartyId:string; invoiceId:string; date:string; amountRial:number; note:string; journalEntryId:string; createdAt:string; }
 export interface CommerceData {
-  schemaVersion: 1; parties: AccountingParty[]; invoices: CommercialInvoice[]; cashTransactions: CashTransaction[];
+  schemaVersion: 1; parties: AccountingParty[]; invoices: CommercialInvoice[]; cashTransactions: CashTransaction[]; chequeEndorsements?: ChequeEndorsement[];
+  companyProfile?: { name:string; nationalId:string; economicCode:string; registrationNumber:string; phone:string; address:string; postalCode:string };
 }
 
 const KEY = 'accounting_phase22_commerce';
@@ -36,6 +46,16 @@ const BACKUP = 'accounting_phase22_commerce_backup';
 const now = () => new Date().toISOString();
 const makeId = (p: string) => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
 const isSafeMoney = (n: number) => Number.isSafeInteger(n) && n >= 0;
+
+// فاز ۵۹: سری‌سازی عملیات حساس در یک تب برای جلوگیری از ثبت هم‌زمان تکراری.
+let commerceMutationTail: Promise<void> = Promise.resolve();
+async function withCommerceMutationLock<T>(work: () => Promise<T>): Promise<T> {
+  const previous = commerceMutationTail;
+  let release!: () => void;
+  commerceMutationTail = new Promise<void>(resolve => { release = resolve; });
+  await previous;
+  try { return await work(); } finally { release(); }
+}
 
 export function emptyCommerceData(): CommerceData { return { schemaVersion: 1, parties: [], invoices: [], cashTransactions: [] }; }
 function validCommerceData(v: unknown): v is CommerceData {
@@ -59,11 +79,18 @@ export async function ensureCommerceAccounts(): Promise<AccountingData> {
   const additions = [
     { id:'sub-purchases', code:'5102', title:'خرید کالا', level:'subsidiary' as const, nature:'debit' as const, parentId:'acc-cogs' },
     { id:'det-purchases', code:'510201', title:'خرید کالا و مواد', level:'detail' as const, nature:'debit' as const, parentId:'sub-purchases' },
+    { id:'det-purchase-discounts', code:'510202', title:'تخفیفات خرید کالا', level:'detail' as const, nature:'credit' as const, parentId:'sub-purchases' },
     { id:'det-inventory', code:'110301', title:'موجودی کالای انبار', level:'detail' as const, nature:'debit' as const, parentId:'sub-inventory' },
     { id:'sub-input-tax', code:'1104', title:'مالیات و عوارض ارزش افزوده خرید', level:'subsidiary' as const, nature:'debit' as const, parentId:'acc-current-assets' },
     { id:'det-input-tax', code:'110401', title:'مالیات ارزش افزوده خرید', level:'detail' as const, nature:'debit' as const, parentId:'sub-input-tax' },
     { id:'sub-output-tax', code:'2102', title:'مالیات و عوارض ارزش افزوده فروش', level:'subsidiary' as const, nature:'credit' as const, parentId:'acc-current-liabilities' },
     { id:'det-output-tax', code:'210201', title:'مالیات ارزش افزوده فروش', level:'detail' as const, nature:'credit' as const, parentId:'sub-output-tax' },
+    { id:'sub-cheques-receivable', code:'1105', title:'اسناد دریافتنی', level:'subsidiary' as const, nature:'debit' as const, parentId:'acc-current-assets' },
+    { id:'det-cheques-receivable', code:'110501', title:'چک‌های دریافتنی نزد صندوق', level:'detail' as const, nature:'debit' as const, parentId:'sub-cheques-receivable' },
+    { id:'sub-cheques-payable', code:'2103', title:'اسناد پرداختنی', level:'subsidiary' as const, nature:'credit' as const, parentId:'acc-current-liabilities' },
+    { id:'det-cheques-payable', code:'210301', title:'چک‌های پرداختنی', level:'detail' as const, nature:'credit' as const, parentId:'sub-cheques-payable' },
+    { id:'sub-bank-expenses', code:'6102', title:'هزینه‌های بانکی', level:'subsidiary' as const, nature:'debit' as const, parentId:'acc-operating-expenses' },
+    { id:'det-bank-fees', code:'610201', title:'کارمزد و هزینه خدمات بانکی', level:'detail' as const, nature:'debit' as const, parentId:'sub-bank-expenses' },
   ];
   const timestamp = now();
   let changed = false;
@@ -86,7 +113,7 @@ export function upsertParty(data: CommerceData, input: Omit<AccountingParty,'id'
   const existing = input.id ? data.parties.find(p => p.id === input.id) : undefined;
   if (input.id && !existing) throw new Error('شخص موردنظر پیدا نشد.');
   const timestamp = now();
-  const party: AccountingParty = { ...input, id:existing?.id || makeId('party'), name, nationalId, phone:input.phone.trim(), address:input.address.trim(), createdAt:existing?.createdAt || timestamp, updatedAt:timestamp };
+  const party: AccountingParty = { ...input, id:existing?.id || makeId('party'), name, nationalId, phone:input.phone.trim(), address:input.address.trim(), economicCode:(input.economicCode||'').trim(), registrationNumber:(input.registrationNumber||'').trim(), postalCode:(input.postalCode||'').trim(), createdAt:existing?.createdAt || timestamp, updatedAt:timestamp };
   return { ...data, parties: existing ? data.parties.map(p=>p.id===party.id?party:p) : [...data.parties,party] };
 }
 
@@ -117,7 +144,7 @@ async function persistPostedJournal(accounting: AccountingData, entry: JournalEn
 
 export function buildInvoice(input: {
   type: InvoiceType; number: string; date: string; fiscalPeriodId: string; partyId: string;
-  description: string; lines: Array<{description:string; quantityMilli:number; unitPriceRial:number; productId?:string; warehouse?:string}>; taxRial:number;
+  description: string; lines: Array<{description:string; quantityMilli:number; unitPriceRial:number; productId?:string; warehouse?:string; unit?:string; discountRial?:number}>; taxRial:number; taxRateBps?:number; dueDate?:string; paymentTerms?:string; notes?:string;
 }, parties: AccountingParty[]): CommercialInvoice {
   const party = parties.find(p=>p.id===input.partyId && p.isActive);
   if (!party || !(party.type==='both' || (input.type==='sale'?party.type==='customer':party.type==='supplier'))) throw new Error('طرف حساب فعال و متناسب با نوع فاکتور انتخاب کنید.');
@@ -130,25 +157,51 @@ export function buildInvoice(input: {
     if (!isSafeMoney(l.unitPriceRial) || l.unitPriceRial<=0) throw new Error('قیمت واحد باید عدد صحیح ریال و بیشتر از صفر باشد.');
     const product = l.quantityMilli * l.unitPriceRial;
     if (!Number.isSafeInteger(product)) throw new Error('حاصل تعداد در قیمت از محدوده مجاز محاسبات خارج است.');
-    const totalRial = Math.floor((product + 500) / 1000);
+    const grossLineRial = Math.floor((product + 500) / 1000);
+    const discountRial = l.discountRial || 0;
+    if (!isSafeMoney(discountRial) || discountRial >= grossLineRial) throw new Error('تخفیف ردیف باید کمتر از مبلغ ردیف باشد.');
+    const totalRial = grossLineRial - discountRial;
     if (!isSafeMoney(totalRial) || totalRial<=0) throw new Error('مبلغ ردیف معتبر نیست.');
-    return {id:makeId('item'),description,quantityMilli:l.quantityMilli,unitPriceRial:l.unitPriceRial,totalRial,...(l.productId?{productId:l.productId,warehouse:l.warehouse||'انبار اصلی'}:{})};
+    return {id:makeId('item'),description,quantityMilli:l.quantityMilli,unitPriceRial:l.unitPriceRial,totalRial,unit:(l.unit||'عدد').trim()||'عدد',discountRial,...(l.productId?{productId:l.productId,warehouse:l.warehouse||'انبار اصلی'}:{})};
   });
   const netRial=lines.reduce((s,l)=>s+l.totalRial,0);
   if (!Number.isSafeInteger(netRial) || !isSafeMoney(input.taxRial)) throw new Error('مبلغ کل یا مالیات از محدوده مجاز خارج است.');
   const grossRial=netRial+input.taxRial;
   if (!Number.isSafeInteger(grossRial) || grossRial<=0) throw new Error('جمع نهایی فاکتور معتبر نیست.');
-  return {id:makeId('invoice'),type:input.type,number,date:input.date,fiscalPeriodId:input.fiscalPeriodId,partyId:party.id,description:input.description.trim(),lines,netRial,taxRial:input.taxRial,grossRial,status:'draft',createdAt:now(),updatedAt:now()};
+  if (input.taxRateBps !== undefined && (!Number.isSafeInteger(input.taxRateBps) || input.taxRateBps < 0 || input.taxRateBps > 10000)) throw new Error('نرخ مالیات باید بین صفر تا صد درصد باشد.');
+  if (input.dueDate && !/^\d{4}\/\d{2}\/\d{2}$/.test(input.dueDate)) throw new Error('تاریخ سررسید باید به شکل سال/ماه/روز شمسی باشد.');
+  if (input.dueDate && input.dueDate < input.date) throw new Error('تاریخ سررسید نمی‌تواند قبل از تاریخ فاکتور باشد.');
+  return {id:makeId('invoice'),type:input.type,number,date:input.date,fiscalPeriodId:input.fiscalPeriodId,partyId:party.id,description:input.description.trim(),lines,netRial,taxRial:input.taxRial,grossRial,taxRateBps:input.taxRateBps??0,dueDate:input.dueDate||'',paymentTerms:(input.paymentTerms||'').trim(),notes:(input.notes||'').trim(),status:'draft',createdAt:now(),updatedAt:now()};
+}
+
+/** ویرایش کنترل‌شده پیش‌نویس؛ فاکتور قطعی قابل بازنویسی نیست. */
+export function updateDraftInvoice(invoiceId: string, input: Parameters<typeof buildInvoice>[0], commerce: CommerceData): CommerceData {
+  const existing = commerce.invoices.find(i => i.id === invoiceId);
+  if (!existing) throw new Error('فاکتور برای ویرایش پیدا نشد.');
+  if (existing.status !== 'draft') throw new Error('فاکتور قطعی قابل ویرایش مستقیم نیست؛ برای حفظ سوابق باید اصلاحیه مستقل ثبت شود.');
+  if (commerce.invoices.some(i => i.id !== invoiceId && i.type === input.type && i.number === input.number.trim())) throw new Error('شماره فاکتور در این نوع فاکتور تکراری است.');
+  const validated = buildInvoice(input, commerce.parties);
+  const updated: CommercialInvoice = { ...validated, id: existing.id, status: 'draft', createdAt: existing.createdAt, updatedAt: now() };
+  logAudit('accounting_invoice_draft_edited', { invoiceId, number: updated.number, type: updated.type, oldGrossRial: existing.grossRial, newGrossRial: updated.grossRial });
+  return { ...commerce, invoices: commerce.invoices.map(i => i.id === invoiceId ? updated : i) };
 }
 
 export async function postInvoice(invoiceId: string, commerce: CommerceData): Promise<{commerce:CommerceData; accounting:AccountingData}> {
-  const invoice=commerce.invoices.find(i=>i.id===invoiceId); if(!invoice) throw new Error('فاکتور پیدا نشد.');
-  if(invoice.status==='posted') return {commerce,accounting:await loadAccountingData()};
+  return withCommerceMutationLock(() => postInvoiceExclusive(invoiceId, commerce));
+}
+
+async function postInvoiceExclusive(invoiceId: string, commerce: CommerceData): Promise<{commerce:CommerceData; accounting:AccountingData}> {
+  const persisted = await loadCommerceData();
+  const activeCommerce = persisted.invoices.some(i => i.id === invoiceId) ? persisted : commerce;
+  const invoice=activeCommerce.invoices.find(i=>i.id===invoiceId); if(!invoice) throw new Error('فاکتور پیدا نشد.');
+  if(activeCommerce.invoices.some(i=>i.id!==invoice.id&&i.type===invoice.type&&i.number.trim()===invoice.number.trim())) throw new Error('شماره این فاکتور با سند دیگری تکراری است؛ قبل از قطعی‌سازی شماره را اصلاح کنید.');
+  if(invoice.status==='posted') return {commerce:activeCommerce,accounting:await loadAccountingData()};
   const accounting=await loadAccountingData(); validateDateAndPeriod(invoice.date,invoice.fiscalPeriodId,accounting);
-  const party=commerce.parties.find(p=>p.id===invoice.partyId && p.isActive); if(!party) throw new Error('طرف حساب فاکتور غیرفعال یا حذف شده است.');
+  const party=activeCommerce.parties.find(p=>p.id===invoice.partyId && p.isActive); if(!party) throw new Error('طرف حساب فاکتور غیرفعال یا حذف شده است.');
   const ar='det-customers', ap='det-suppliers', sales='det-sales-goods', inventory='det-inventory', cogs='det-cogs-goods', purchases='det-purchases', inputTax='det-input-tax', outputTax='det-output-tax';
   const stockLines=invoice.lines.filter(l=>l.productId);
-  const needed=invoice.type==='sale'?[ar,sales,inventory,cogs,...(invoice.taxRial?[outputTax]:[])]:[inventory,purchases,cogs,ap,...(invoice.taxRial?[inputTax]:[])];
+  const stockPurchaseDiscount=invoice.type==='purchase'&&invoice.lines.some(l=>l.productId&&(l.discountRial||0)>0);
+  const needed=invoice.type==='sale'?[ar,sales,inventory,cogs,...(invoice.taxRial?[outputTax]:[])]:[inventory,purchases,cogs,ap,...(invoice.taxRial?[inputTax]:[]),...(stockPurchaseDiscount?['det-purchase-discounts']:[])];
   for(const id of needed) requireAccount(accounting,id,id);
   const costing=await loadInventoryCostData(); let inventoryValue=0; let cogsValue=0; let purchaseCogsAdjustment=0; let provisional=false;
   const touched=new Set<string>();
@@ -168,8 +221,6 @@ export async function postInvoice(invoiceId: string, commerce: CommerceData): Pr
       cogsValue+=result.totalCostRial; provisional=provisional||result.provisional;
     }
   }
-  // کنترل موجودی عملیاتی و اعمال تغییر فقط پس از اعتبارسنجی همه ردیف‌ها
-  for(const line of stockLines){const p=products.find(x=>x.id===line.productId)!;const qty=line.quantityMilli/1000;if(invoice.type==='sale'&&!accounting.settings.allowNegativeStockByWarehouse[line.warehouse||p.warehouse||'انبار اصلی']&&p.systemQty<qty)throw new Error(`موجودی کالای «${p.name}» کافی نیست.`);}
   const lines:JournalLine[]=[];
   if(invoice.type==='sale'){
     lines.push(journalLine(ar,'حساب دریافتنی مشتری',invoice.grossRial,0,party.id),journalLine(sales,'فروش کالا و خدمات',0,invoice.netRial));
@@ -178,45 +229,136 @@ export async function postInvoice(invoiceId: string, commerce: CommerceData): Pr
   }else{
     const nonStockPurchase=invoice.lines.filter(l=>!l.productId).reduce((sum,l)=>sum+l.totalRial,0);
     if(inventoryValue)lines.push(journalLine(inventory,'افزایش موجودی کالا',inventoryValue,0));
+    if(purchaseCogsAdjustment)lines.push(journalLine(cogs,'تعدیل بهای تمام‌شده بابت تسویه کسری منفی',purchaseCogsAdjustment,0));
     if(nonStockPurchase)lines.push(journalLine(purchases,'خرید خدمات و اقلام غیرانبار',nonStockPurchase,0));
+    const stockDiscount=stockLines.reduce((sum,l)=>sum+(l.discountRial||0),0);
+    if(stockDiscount)lines.push(journalLine('det-purchase-discounts','تخفیفات خرید کالا',0,stockDiscount));
     if(invoice.taxRial)lines.push(journalLine(inputTax,'مالیات ارزش افزوده خرید',invoice.taxRial,0));
     lines.push(journalLine(ap,'حساب پرداختنی تأمین‌کننده',0,invoice.grossRial,party.id));
   }
+  // کنترل هم‌زمانی موجودی باید پیش از قطعی‌سازی سند حسابداری انجام شود.
+  for(const line of stockLines){const p=products.find(x=>x.id===line.productId)!;const movement=costing.movements.find(m=>m.sourceDocumentId===invoice.id&&m.productId===p.id);if(!movement)throw new Error(`گردش انبار کالای «${p.name}» ثبت نشده است.`);const before=movement.beforeQtyMilli/1000,after=movement.afterQtyMilli/1000;if(Math.abs(p.systemQty-before)>=0.000001&&Math.abs(p.systemQty-after)>=0.000001)throw new Error(`موجودی کالای «${p.name}» هم‌زمان تغییر کرده است؛ فاکتور را بررسی کنید.`);}
   const existing=accounting.journalEntries.find(j=>j.sourceDocumentId===invoice.id && j.status==='posted');
   const journalId=existing?.id || await persistPostedJournal(accounting,journalBase(invoice.id,invoice.type==='sale'?'F':'B',invoice.fiscalPeriodId,invoice.date,invoice.description || `فاکتور ${invoice.number}`,invoice.type==='sale'?'sales':'purchase',lines));
-  for(const line of stockLines){const p=products.find(x=>x.id===line.productId)!;const movement=costing.movements.find(m=>m.sourceDocumentId===invoice.id&&m.productId===p.id);if(!movement)throw new Error(`گردش انبار کالای «${p.name}» ثبت نشده است.`);const before=movement.beforeQtyMilli/1000,after=movement.afterQtyMilli/1000;if(Math.abs(p.systemQty-before)<0.000001)p.systemQty=after;else if(Math.abs(p.systemQty-after)>=0.000001)throw new Error(`موجودی کالای «${p.name}» هم‌زمان تغییر کرده است؛ فاکتور را بررسی کنید.`);}
+  for(const line of stockLines){const p=products.find(x=>x.id===line.productId)!;const movement=costing.movements.find(m=>m.sourceDocumentId===invoice.id&&m.productId===p.id)!;const before=movement.beforeQtyMilli/1000,after=movement.afterQtyMilli/1000;if(Math.abs(p.systemQty-before)<0.000001)p.systemQty=after;}
   if(stockLines.length){await saveInventoryCostData(costing);saveAppState(true);await flushSave();logAudit('accounting_invoice_stock_posted',{invoiceId:invoice.id,number:invoice.number,type:invoice.type,items:stockLines.length,cogsRial:cogsValue,inventoryRial:inventoryValue,provisionalCost:provisional});}
   const updated={...invoice,status:'posted' as const,journalEntryId:journalId,updatedAt:now()};
-  const next={...commerce,invoices:commerce.invoices.map(i=>i.id===invoice.id?updated:i)}; await saveCommerceData(next);
+  const next={...activeCommerce,invoices:activeCommerce.invoices.map(i=>i.id===invoice.id?updated:i)}; await saveCommerceData(next);
   return {commerce:next,accounting:await loadAccountingData()};
 }
 
 export async function createCashTransaction(input: {
   type:'receipt'|'payment'; number:string; date:string; fiscalPeriodId:string; partyId:string;
-  cashAccountId:string; amountRial:number; description:string;
-}, commerce:CommerceData): Promise<{commerce:CommerceData; accounting:AccountingData}> {
+  cashAccountId:string; amountRial:number; description:string; method?:SettlementMethod;
+  allocations?:InvoiceAllocation[]; chequeNumber?:string; chequeBank?:string; chequeDueDate?:string;
+}, commerce:CommerceData):Promise<{commerce:CommerceData;accounting:AccountingData}> {
+  return withCommerceMutationLock(() => createCashTransactionExclusive(input, commerce));
+}
+
+async function createCashTransactionExclusive(input: {
+  type:'receipt'|'payment'; number:string; date:string; fiscalPeriodId:string; partyId:string;
+  cashAccountId:string; amountRial:number; description:string; method?:SettlementMethod;
+  allocations?:InvoiceAllocation[]; chequeNumber?:string; chequeBank?:string; chequeDueDate?:string;
+}, originalCommerce:CommerceData):Promise<{commerce:CommerceData;accounting:AccountingData}> {
+  const persisted = await loadCommerceData();
+  const activeCommerce = persisted.cashTransactions.length || persisted.invoices.length || persisted.parties.length ? persisted : originalCommerce;
+  const commerce = activeCommerce;
   const accounting=await loadAccountingData(); validateDateAndPeriod(input.date,input.fiscalPeriodId,accounting);
   if(!input.number.trim()) throw new Error('شماره رسید یا پرداخت الزامی است.');
+  const normalizedNumber=input.number.trim();
+  if(activeCommerce.cashTransactions.some(t=>t.type===input.type&&t.fiscalPeriodId===input.fiscalPeriodId&&t.number.trim()===normalizedNumber)) throw new Error('شماره رسید/پرداخت در این نوع سند و سال مالی قبلاً ثبت شده است.');
   if(!isSafeMoney(input.amountRial)||input.amountRial<=0) throw new Error('مبلغ باید عدد صحیح ریال و بیشتر از صفر باشد.');
-  const party=commerce.parties.find(p=>p.id===input.partyId && p.isActive);
-  if(!party || !(party.type==='both'||(input.type==='receipt'?party.type==='customer':party.type==='supplier'))) throw new Error('طرف حساب متناسب با دریافت یا پرداخت انتخاب کنید.');
-  requireAccount(accounting,input.cashAccountId,'صندوق/بانک');
-  const partyAccount=input.type==='receipt'?'det-customers':'det-suppliers';
-  requireAccount(accounting,partyAccount,'حساب اشخاص');
+  const party=activeCommerce.parties.find(p=>p.id===input.partyId&&p.isActive);
+  if(!party||!(party.type==='both'||(input.type==='receipt'?party.type==='customer':party.type==='supplier'))) throw new Error('طرف حساب متناسب با دریافت یا پرداخت انتخاب کنید.');
+  const method=input.method||'cash'; const isCheque=method==='cheque';
+  if(!isCheque) requireAccount(accounting,input.cashAccountId,'صندوق/بانک');
+  else {
+    requireAccount(accounting,input.cashAccountId,'صندوق/بانک مقصد یا مبدأ برای تسویه چک');
+    requireAccount(accounting,input.type==='receipt'?'det-cheques-receivable':'det-cheques-payable','اسناد چک');
+    if(!input.chequeNumber?.trim()||!input.chequeBank?.trim()||!input.chequeDueDate||!/^[0-9]{4}\/[0-9]{2}\/[0-9]{2}$/.test(input.chequeDueDate)) throw new Error('شماره چک، بانک و تاریخ سررسید معتبر الزامی است.');
+    if(input.chequeDueDate<input.date) throw new Error('سررسید چک نمی‌تواند قبل از تاریخ دریافت/پرداخت باشد.');
+    const normalizedCheque=input.chequeNumber!.trim(); const normalizedBank=input.chequeBank!.trim().toLocaleLowerCase();
+    if(activeCommerce.cashTransactions.some(t=>t.method==='cheque'&&t.chequeStatus!=='void'&&t.chequeNumber?.trim()===normalizedCheque&&(t.chequeBank||'').trim().toLocaleLowerCase()===normalizedBank)) throw new Error('این شماره چک با همین بانک قبلاً در سوابق چک ثبت شده است.');
+  }
+  const allocations=input.allocations||[]; const allocated=allocations.reduce((sum,a)=>sum+a.amountRial,0);
+  if(allocations.some(a=>!isSafeMoney(a.amountRial)||a.amountRial<=0)||allocated>input.amountRial) throw new Error('مجموع تخصیص به فاکتورها معتبر نیست یا از مبلغ عملیات بیشتر است.');
+  const seen=new Set<string>();
+  for(const a of allocations){
+    if(seen.has(a.invoiceId)) throw new Error('یک فاکتور را بیش از یک بار انتخاب نکنید.'); seen.add(a.invoiceId);
+    const invoice=activeCommerce.invoices.find(i=>i.id===a.invoiceId&&i.status==='posted'&&i.partyId===party.id);
+    if(!invoice||((input.type==='receipt')!==(invoice.type==='sale'))) throw new Error('فاکتور انتخابی قطعی نیست یا با نوع دریافت/پرداخت و طرف حساب سازگار نیست.');
+    const outstanding=invoiceOutstanding(invoice.id,commerce);
+    if(a.amountRial>outstanding) throw new Error(`مبلغ تخصیص از مانده فاکتور ${invoice.number} بیشتر است.`);
+  }
+  const partyAccount=input.type==='receipt'?'det-customers':'det-suppliers'; requireAccount(accounting,partyAccount,'حساب اشخاص');
+  const instrumentAccount=isCheque?(input.type==='receipt'?'det-cheques-receivable':'det-cheques-payable'):input.cashAccountId;
   const lines=input.type==='receipt'
-    ? [journalLine(input.cashAccountId,'دریافت وجه در صندوق/بانک',input.amountRial,0),journalLine(partyAccount,'تسویه حساب مشتری',0,input.amountRial,party.id)]
-    : [journalLine(partyAccount,'تسویه حساب تأمین‌کننده',input.amountRial,0,party.id),journalLine(input.cashAccountId,'پرداخت وجه از صندوق/بانک',0,input.amountRial)];
-  const id=makeId(input.type); const entry=journalBase(id,input.type==='receipt'?'R':'P',input.fiscalPeriodId,input.date,input.description || (input.type==='receipt'?'دریافت از مشتری':'پرداخت به تأمین‌کننده'),input.type,lines);
+    ? [journalLine(instrumentAccount,isCheque?'چک دریافتنی':'دریافت وجه',input.amountRial,0),journalLine(partyAccount,'تسویه حساب مشتری',0,input.amountRial,party.id)]
+    : [journalLine(partyAccount,'تسویه حساب تأمین‌کننده',input.amountRial,0,party.id),journalLine(instrumentAccount,isCheque?'چک پرداختنی':'پرداخت وجه',0,input.amountRial)];
+  const id=makeId(input.type); const entry=journalBase(id,input.type==='receipt'?'R':'P',input.fiscalPeriodId,input.date,input.description||(input.type==='receipt'?'دریافت از مشتری':'پرداخت به تأمین‌کننده'),input.type,lines);
   const journalEntryId=await persistPostedJournal(accounting,entry);
-  const tx:CashTransaction={id,type:input.type,number:input.number.trim(),date:input.date,fiscalPeriodId:input.fiscalPeriodId,partyId:party.id,cashAccountId:input.cashAccountId,amountRial:input.amountRial,description:input.description.trim(),journalEntryId,createdAt:now()};
-  const next={...commerce,cashTransactions:[...commerce.cashTransactions,tx]}; await saveCommerceData(next);
+  const tx:CashTransaction={id,type:input.type,number:input.number.trim(),date:input.date,fiscalPeriodId:input.fiscalPeriodId,partyId:party.id,cashAccountId:input.cashAccountId,amountRial:input.amountRial,description:input.description.trim(),journalEntryId,createdAt:now(),method,allocations,...(isCheque?{chequeNumber:input.chequeNumber!.trim(),chequeBank:input.chequeBank!.trim(),chequeDueDate:input.chequeDueDate,chequeStatus:'pending' as const}:{})};
+  const next={...activeCommerce,cashTransactions:[...activeCommerce.cashTransactions,tx]}; await saveCommerceData(next);
   return {commerce:next,accounting:await loadAccountingData()};
+}
+
+export function invoiceOutstanding(invoiceId:string,commerce:CommerceData):number {
+  const invoice=commerce.invoices.find(i=>i.id===invoiceId&&i.status==='posted'); if(!invoice)return 0;
+  const allocated=commerce.cashTransactions.filter(t=>!t.chequeStatus||t.chequeStatus==='pending'||t.chequeStatus==='cleared').flatMap(t=>t.allocations||[]).filter(a=>a.invoiceId===invoiceId).reduce((s,a)=>s+a.amountRial,0);
+  const endorsed=invoice.type==='purchase'?(commerce.chequeEndorsements||[]).filter(e=>e.invoiceId===invoiceId&&commerce.cashTransactions.some(t=>t.id===e.transactionId&&(!t.chequeStatus||t.chequeStatus==='pending'||t.chequeStatus==='cleared'))).reduce((sum,e)=>sum+e.amountRial,0):0;
+  return Math.max(0,invoice.grossRial-allocated-endorsed);
+}
+
+export async function updateChequeStatus(transactionId:string,status:Exclude<ChequeStatus,'pending'>,clearingDate:string,commerce:CommerceData):Promise<{commerce:CommerceData;accounting:AccountingData}> {
+  const tx=commerce.cashTransactions.find(t=>t.id===transactionId);
+  if(!tx||tx.method!=='cheque'||tx.chequeStatus!=='pending') throw new Error('چک در وضعیت انتظار یافت نشد.');
+  const accounting=await loadAccountingData();
+  if(!/^\d{4}\/\d{2}\/\d{2}$/.test(clearingDate)) throw new Error('تاریخ عملیات چک باید شمسی و معتبر باشد.');
+  const clearingPeriod=accounting.fiscalPeriods.find(p=>p.status==='open'&&clearingDate>=p.startDate&&clearingDate<=p.endDate);
+  if(!clearingPeriod) throw new Error('برای تاریخ عملیات چک، سال مالی باز و معتبر پیدا نشد.');
+  if(status==='cleared'){
+    if(tx.type==='receipt'&&(commerce.chequeEndorsements||[]).some(e=>e.transactionId===tx.id)) throw new Error('این چک ظهرنویسی و واگذار شده است؛ وصول آن در حساب بانکی شرکت مجاز نیست.');
+    requireAccount(accounting,tx.cashAccountId,'صندوق/بانک');
+    const chequeAccount=tx.type==='receipt'?'det-cheques-receivable':'det-cheques-payable';
+    const lines=tx.type==='receipt'
+      ? [journalLine(tx.cashAccountId,'وصول چک دریافتی',tx.amountRial,0),journalLine(chequeAccount,'خروج از اسناد دریافتنی',0,tx.amountRial)]
+      : [journalLine(chequeAccount,'تسویه چک پرداختنی',tx.amountRial,0),journalLine(tx.cashAccountId,'پرداخت از بانک بابت چک',0,tx.amountRial)];
+    const entry=journalBase(`${tx.id}:clear`,tx.type==='receipt'?'RC':'PC',clearingPeriod.id,clearingDate,`تسویه چک ${tx.chequeNumber}`,tx.type,lines);
+    const journalId=await persistPostedJournal(accounting,entry);
+    const next={...commerce,cashTransactions:commerce.cashTransactions.map(t=>t.id===tx.id?{...t,chequeStatus:status,clearingJournalEntryId:journalId}:t)};
+    await saveCommerceData(next); return {commerce:next,accounting:await loadAccountingData()};
+  }
+  if(status==='bounced'){
+    const partyAccount=tx.type==='receipt'?'det-customers':'det-suppliers';
+    const chequeAccount=tx.type==='receipt'?'det-cheques-receivable':'det-cheques-payable';
+    const endorsements=(commerce.chequeEndorsements||[]).filter(e=>e.transactionId===tx.id);
+    const endorsedTotal=endorsements.reduce((sum,e)=>sum+e.amountRial,0);
+    const lines=tx.type==='receipt'
+      ? [journalLine(partyAccount,'برگشت چک دریافتی از مشتری',tx.amountRial,0,tx.partyId),
+         ...endorsements.map(e=>journalLine('det-suppliers','بازگشت بدهی تأمین‌کننده بابت بخش واگذارشده چک برگشتی',0,e.amountRial,e.toPartyId)),
+         ...(tx.amountRial>endorsedTotal?[journalLine(chequeAccount,'حذف مانده واگذارنشده چک برگشتی از اسناد دریافتنی',0,tx.amountRial-endorsedTotal)]:[])]
+      : [journalLine(chequeAccount,'ابطال چک پرداختی برگشتی',tx.amountRial,0),journalLine(partyAccount,'بازگشت بدهی تأمین‌کننده',0,tx.amountRial,tx.partyId)];
+    const entry=journalBase(`${tx.id}:bounce`,tx.type==='receipt'?'RB':'PB',clearingPeriod.id,clearingDate,`برگشت چک ${tx.chequeNumber}`,tx.type,lines);
+    const journalId=await persistPostedJournal(accounting,entry);
+    const next={...commerce,cashTransactions:commerce.cashTransactions.map(t=>t.id===tx.id?{...t,chequeStatus:status,clearingJournalEntryId:journalId,allocations:[]}:t)};
+    await saveCommerceData(next); return {commerce:next,accounting:await loadAccountingData()};
+  }
+  const original=accounting.journalEntries.find(j=>j.id===tx.journalEntryId&&j.status==='posted');
+  if(!original) throw new Error('سند اولیه چک پیدا نشد؛ ابطال بدون سند معکوس مجاز نیست.');
+  const endorsements=(commerce.chequeEndorsements||[]).filter(e=>e.transactionId===tx.id);
+  const reverseLines=original.lines.map(l=>journalLine(l.accountId,`ابطال چک ${tx.chequeNumber||tx.number}`,l.creditRial,l.debitRial,l.partyId));
+  for(const endorsement of endorsements){const endorsementJournal=accounting.journalEntries.find(j=>j.id===endorsement.journalEntryId&&j.status==='posted');if(!endorsementJournal)throw new Error('یکی از اسناد ظهرنویسی پیدا نشد؛ ابطال بدون اسناد معکوس کامل مجاز نیست.');reverseLines.push(...endorsementJournal.lines.map(l=>journalLine(l.accountId,`ابطال ظهرنویسی چک ${tx.chequeNumber||tx.number}`,l.creditRial,l.debitRial,l.partyId)));}
+  const reversal=journalBase(`${tx.id}:void`,tx.type==='receipt'?'RV':'PV',clearingPeriod.id,clearingDate,`ابطال چک ${tx.chequeNumber||tx.number}`,'manual',reverseLines);
+  const reversalId=await persistPostedJournal(accounting,reversal);
+  const next={...commerce,cashTransactions:commerce.cashTransactions.map(t=>t.id===tx.id?{...t,chequeStatus:'void' as const,clearingJournalEntryId:reversalId,allocations:[]}:t)};
+  await saveCommerceData(next); return {commerce:next,accounting:await loadAccountingData()};
 }
 
 export function partyBalance(partyId: string, commerce: CommerceData): number {
   const sales=commerce.invoices.filter(i=>i.status==='posted'&&i.type==='sale'&&i.partyId===partyId).reduce((s,i)=>s+i.grossRial,0);
   const purchases=commerce.invoices.filter(i=>i.status==='posted'&&i.type==='purchase'&&i.partyId===partyId).reduce((s,i)=>s+i.grossRial,0);
-  const receipts=commerce.cashTransactions.filter(t=>t.type==='receipt'&&t.partyId===partyId).reduce((s,t)=>s+t.amountRial,0);
-  const payments=commerce.cashTransactions.filter(t=>t.type==='payment'&&t.partyId===partyId).reduce((s,t)=>s+t.amountRial,0);
-  return sales-purchases-receipts+payments;
+  const receipts=commerce.cashTransactions.filter(t=>t.type==='receipt'&&t.partyId===partyId&&(!t.chequeStatus||t.chequeStatus==='pending'||t.chequeStatus==='cleared')).reduce((s,t)=>s+t.amountRial,0);
+  const payments=commerce.cashTransactions.filter(t=>t.type==='payment'&&t.partyId===partyId&&(!t.chequeStatus||t.chequeStatus==='pending'||t.chequeStatus==='cleared')).reduce((s,t)=>s+t.amountRial,0);
+  const endorsed=(commerce.chequeEndorsements||[]).filter(e=>e.toPartyId===partyId&&commerce.cashTransactions.some(t=>t.id===e.transactionId&&(!t.chequeStatus||t.chequeStatus==='pending'||t.chequeStatus==='cleared'))).reduce((sum,e)=>sum+e.amountRial,0);
+  return sales-purchases-receipts+payments+endorsed;
 }
