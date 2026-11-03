@@ -1,0 +1,9 @@
+مرحله ۱۷ — نسخه ۱.۵.۶
+
+۱) ZIP را استخراج کنید و محتویات پوشه پروژه را در GitHub روی شاخه main جایگزین کنید.
+۲) از تب Actions، workflow با نام Build Anbarin APK را اجرا کنید.
+۳) موفقیت مرحله Verify release metadata و Verify APK outputs را بررسی کنید.
+۴) Artifact مربوط به APK را دریافت کنید.
+۵) Artifact با نام anbarin-build-checksums را نیز برای تطبیق SHA-256 نگه دارید.
+
+توجه: Debug APK فقط برای تست است. برای Release APK امضای انتشار معتبر لازم است. این تغییرات هنوز در GitHub اجرا یا روی گوشی تست نشده‌اند.

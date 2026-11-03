@@ -3,11 +3,14 @@
  */
 
 import type { Product } from '@/types';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { products, settings, session, auditLog, inventoryDocs, isDoubleCount, logAudit } from './state';
 import { toast } from './ui';
 import { exportExcel, exportCSV, rowsToCSV, buildOfflineXlsx } from './import-export';
 import { downloadFile, dateStr, formatFaNumber } from '@/utils/helpers';
 import { getOperatorName } from './storage';
+
+const NativePrint = registerPlugin<{ printHtml(options: { html: string; title: string }): Promise<{ started: boolean }> }>('NativePrint');
 
 export interface ReportSummary {
   total: number;
@@ -592,9 +595,29 @@ function fallbackCopy(text: string): void {
 
 
 
-/** نمایش تاریخچه محلی عملیات ثبت‌شده؛ این گزارش جایگزین لاگ سرور یا ردپای غیرقابل‌دستکاری نیست. */
+/** صفحه‌بندی تاریخچه محلی عملیات؛ سوابق ذخیره‌شده دست‌نخورده می‌مانند. */
+let activityHistoryPage = 0;
+let activityHistoryPageSize = 10;
+
+export function setActivityHistoryPage(page: number): void {
+  const totalPages = Math.max(1, Math.ceil((auditLog || []).length / activityHistoryPageSize));
+  activityHistoryPage = Math.max(0, Math.min(totalPages - 1, Math.trunc(page) || 0));
+}
+
+export function setActivityHistoryPageSize(size: number): void {
+  activityHistoryPageSize = [10, 25, 50, 100].includes(size) ? size : 10;
+  activityHistoryPage = 0;
+}
+
 export function renderActivityHistoryPanel(): string {
-  const entries = [...(auditLog || [])].slice(-100).reverse();
+  const allEntries = [...(auditLog || [])].slice(-100).reverse();
+  const total = allEntries.length;
+  const totalPages = Math.max(1, Math.ceil(total / activityHistoryPageSize));
+  activityHistoryPage = Math.min(activityHistoryPage, totalPages - 1);
+  const start = activityHistoryPage * activityHistoryPageSize;
+  const entries = allEntries.slice(start, start + activityHistoryPageSize);
+  const from = total ? start + 1 : 0;
+  const to = Math.min(start + entries.length, total);
   const esc = (v: unknown) => String(v ?? '').replace(/[&<>"']/g, (c) =>
     ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c] || c));
   const detailText = (detail: Record<string, unknown> | undefined) => {
@@ -602,18 +625,31 @@ export function renderActivityHistoryPanel(): string {
     try { return Object.entries(detail).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : String(v)}`).join(' | '); }
     catch { return ''; }
   };
-  const rows = entries.map((e) => ({
+  const csvRows = allEntries.map((e) => ({
     زمان: e.ts || '', کاربر: e.operator || 'نامشخص',
     عملیات: e.action || '', جزئیات: detailText(e.detail),
   }));
   const body = entries.length ? entries.map((e) => `<tr><td>${esc(e.ts)}</td><td>${esc(e.operator || 'نامشخص')}</td><td>${esc(e.action)}</td><td style="white-space:normal;max-width:260px">${esc(detailText(e.detail))}</td></tr>`).join('') :
     '<tr><td colspan="4">هنوز رویدادی در تاریخچه ثبت نشده است.</td></tr>';
-  const csv = rowsToCSV(rows);
+  const csv = rowsToCSV(csvRows);
   return `<section class="card" style="margin-top:14px;padding:12px">
     <h3 style="margin:0 0 6px">🧾 تاریخچه عملیات کاربران</h3>
-    <p class="hint">آخرین ۱۰۰ رویداد از گزارش محلی برنامه نمایش داده می‌شود. تاریخچه فعلی محدود به رویدادهایی است که برنامه در audit log ثبت کرده است.</p>
+    <p class="hint">آخرین ۱۰۰ رویداد ثبت‌شده؛ برای کوتاه ماندن صفحه، سوابق صفحه‌بندی شده‌اند.</p>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:8px 0">
+      <span class="hint" style="margin:0">نمایش ${formatFaNumber(from)} تا ${formatFaNumber(to)} از ${formatFaNumber(total)} عملیات</span>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px">تعداد در صفحه
+        <select id="activityHistoryPageSize" class="input" style="width:auto;min-width:76px;padding:6px">
+          ${[10,25,50,100].map((n) => `<option value="${n}" ${activityHistoryPageSize === n ? 'selected' : ''}>${n}</option>`).join('')}
+        </select>
+      </label>
+    </div>
     <div style="overflow-x:auto"><table class="data-table"><thead><tr><th>زمان</th><th>کاربر</th><th>عملیات</th><th>جزئیات</th></tr></thead><tbody>${body}</tbody></table></div>
-    <button class="btn btn-secondary btn-block" id="btnActivityHistoryCSV" style="margin-top:8px">خروجی CSV تاریخچه</button>
+    <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-top:10px">
+      <button class="btn btn-secondary" id="btnActivityHistoryPrev" data-page="${activityHistoryPage - 1}" ${activityHistoryPage <= 0 ? 'disabled' : ''}>قبلی</button>
+      <span class="hint" style="margin:0">صفحه ${formatFaNumber(activityHistoryPage + 1)} از ${formatFaNumber(totalPages)}</span>
+      <button class="btn btn-secondary" id="btnActivityHistoryNext" data-page="${activityHistoryPage + 1}" ${activityHistoryPage >= totalPages - 1 ? 'disabled' : ''}>بعدی</button>
+    </div>
+    <button class="btn btn-secondary btn-block" id="btnActivityHistoryCSV" style="margin-top:8px">خروجی CSV کل تاریخچه (تا ۱۰۰ عملیات)</button>
     <textarea id="activityHistoryCSVData" hidden>${esc(csv)}</textarea>
   </section>`;
 }
@@ -713,10 +749,47 @@ export function printProductCardex(productId: string): void {
   const p = products.find((item) => item.id === productId);
   if (!p) { toast('ابتدا کالا را انتخاب کنید', 'error'); return; }
   const rows = getProductCardex(productId);
-  const w = window.open('', '_blank');
-  if (!w) { toast('پنجره چاپ باز نشد؛ اجازه بازشدن پنجره را فعال کنید', 'error'); return; }
   const esc = (v: unknown) => String(v ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
-  w.document.write(`<!doctype html><html lang="fa" dir="rtl"><meta charset="utf-8"><title>کاردکس ${esc(p.name)}</title><style>body{font-family:Tahoma,sans-serif;padding:24px;color:#18352b}h2{color:#176b4b}table{width:100%;border-collapse:collapse;margin-top:18px}th,td{border:1px solid #bbb;padding:8px;text-align:right}th{background:#e8f3ed}.hint{color:#555;font-size:12px}@media print{button{display:none}}</style><h2>کاردکس کالا — انبارین پرو</h2><p>${esc(p.name)} | کد: ${esc(p.code||p.sku||'—')} | موجودی سیستم فعلی: ${esc(p.systemQty)}</p><p class="hint">سوابق نمایش‌داده‌شده محدود به رویدادهای ثبت‌شده در گزارش فعالیت است و ممکن است تاریخچه قدیمی کامل نباشد.</p><table><thead><tr><th>تاریخ</th><th>عملیات</th><th>قبل</th><th>تغییر</th><th>بعد</th><th>کاربر</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${esc(r.date)}</td><td>${esc(r.action)}</td><td>${esc(r.before)}</td><td>${esc(r.change)}</td><td>${esc(r.after)}</td><td>${esc(r.operator)}</td></tr>`).join('')}</tbody></table><script>window.onload=()=>window.print()</script></html>`);
-  w.document.close();
+  const body = rows.length
+    ? rows.map(r => `<tr><td>${esc(r.date)}</td><td>${esc(r.action)}</td><td>${esc(r.before)}</td><td>${esc(r.change)}</td><td>${esc(r.after)}</td><td>${esc(r.operator)}</td></tr>`).join('')
+    : '<tr><td colspan="6" class="empty">برای این کالا سابقه گردش ثبت‌شده‌ای وجود ندارد.</td></tr>';
+  const html = `<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>کاردکس ${esc(p.name)}</title><style>
+    @page{size:A4 portrait;margin:12mm}*{box-sizing:border-box}html,body{margin:0;padding:0;background:#fff;color:#17231e;font-family:Tahoma,Arial,sans-serif;direction:rtl;font-size:11px}
+    h2{font-size:18px;margin:0 0 12px;color:#176b4b}.meta{padding:9px 11px;border:1px solid #cbd5d0;border-radius:6px;margin-bottom:10px;line-height:2}.hint{color:#555;font-size:10px;line-height:1.8;margin:8px 0}
+    table{width:100%;border-collapse:collapse;margin-top:12px;table-layout:fixed}thead{display:table-header-group}tr{break-inside:avoid;page-break-inside:avoid}th,td{border:1px solid #aebbb4;padding:7px 5px;text-align:right;vertical-align:top;overflow-wrap:anywhere}th{background:#e8f3ed;font-weight:700}tbody tr:nth-child(even){background:#f7faf8}.empty{text-align:center;padding:18px}
+    .footer{margin-top:12px;text-align:left;color:#666;font-size:9px}@media screen{body{padding:18px;max-width:900px;margin:auto}}@media print{body{padding:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+  </style></head><body><h2>کاردکس کالا — انبارین پرو</h2><div class="meta"><strong>${esc(p.name)}</strong><br>کد: ${esc(p.code||p.sku||'—')} | انبار: ${esc(p.warehouse||'انبار اصلی')}<br>موجودی سیستم فعلی: ${esc(p.systemQty)} ${esc(p.unit||'')}</div><p class="hint">سوابق فقط شامل رویدادهای ثبت‌شده در گزارش فعالیت است؛ ممکن است تاریخچه قدیمی کامل نباشد.</p><table><thead><tr><th>تاریخ</th><th>عملیات</th><th>موجودی قبل</th><th>تغییر</th><th>موجودی بعد</th><th>کاربر</th></tr></thead><tbody>${body}</tbody></table><div class="footer">تاریخ تهیه گزارش: ${esc(new Date().toLocaleString('fa-IR'))}</div></body></html>`;
+
+  if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
+    NativePrint.printHtml({ html, title: `کاردکس-${p.code || p.id}` }).then((result) => {
+      if (result?.started) toast('پنجره چاپ باز شد؛ برای PDF گزینه «Save as PDF / ذخیره به‌صورت PDF» را انتخاب کنید', 'success');
+      else toast('سیستم چاپ پاسخی نداد؛ دوباره تلاش کنید', 'error');
+    }).catch((err) => {
+      console.error('[Anbarin] cardex native print failed:', err);
+      toast('باز کردن چاپ ناموفق بود؛ نسخه جدید برنامه را نصب کنید', 'error');
+    });
+  } else {
+    // در مرورگر از iframe مستقل استفاده می‌کنیم تا به popup blocker وابسته نباشد.
+    try {
+      const frame = document.createElement('iframe');
+      frame.title = 'پیش‌نمایش چاپ کاردکس';
+      frame.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;border:0;opacity:0.01;';
+      let started = false;
+      const cleanup = () => window.setTimeout(() => frame.remove(), 30000);
+      frame.onload = () => {
+        if (started) return;
+        started = true;
+        const w = frame.contentWindow;
+        if (!w) { toast('آماده‌سازی چاپ ناموفق بود', 'error'); frame.remove(); return; }
+        w.onafterprint = cleanup;
+        window.setTimeout(() => { try { w.focus(); w.print(); } catch (err) { console.error(err); toast('مرورگر امکان چاپ را نداد', 'error'); frame.remove(); } }, 250);
+      };
+      frame.srcdoc = html;
+      document.body.appendChild(frame);
+    } catch (err) {
+      console.error('[Anbarin] cardex print setup failed:', err);
+      toast('آماده‌سازی چاپ ناموفق بود', 'error');
+    }
+  }
   logAudit('print_product_cardex', { id: productId, count: rows.length });
 }

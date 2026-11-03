@@ -76,6 +76,8 @@ import {
   renderManagementDashboard,
   renderInventoryMovementPanel,
   renderActivityHistoryPanel,
+  setActivityHistoryPage,
+  setActivityHistoryPageSize,
   exportStockAlertsExcel,
   printStockAlerts,
   exportDiffsExcel,
@@ -332,7 +334,7 @@ function renderShell() {
         <div class="logo-area">
           <img class="brand-logo" src="./logo.png" alt="لوگوی انبارین" />
           <div class="brand-title"><strong>انبارین</strong>
-          <span class="version">v1.5.1</span>
+          <span class="version">v1.5.7</span>
           <span class="role-badge" id="roleBadge">—</span></div>
         </div>
         <div class="header-stats" id="headerStats"></div>
@@ -1143,6 +1145,18 @@ function updateHeader() {
   const activityPanel = document.getElementById('activityHistoryPanel');
   if (activityPanel) {
     activityPanel.innerHTML = renderActivityHistoryPanel();
+    document.getElementById('btnActivityHistoryPrev')?.addEventListener('click', (event) => {
+      setActivityHistoryPage(Number((event.currentTarget as HTMLButtonElement).dataset.page));
+      updateHeader();
+    });
+    document.getElementById('btnActivityHistoryNext')?.addEventListener('click', (event) => {
+      setActivityHistoryPage(Number((event.currentTarget as HTMLButtonElement).dataset.page));
+      updateHeader();
+    });
+    document.getElementById('activityHistoryPageSize')?.addEventListener('change', (event) => {
+      setActivityHistoryPageSize(Number((event.target as HTMLSelectElement).value));
+      updateHeader();
+    });
     document.getElementById('btnActivityHistoryCSV')?.addEventListener('click', () => {
       const data = (document.getElementById('activityHistoryCSVData') as HTMLTextAreaElement | null)?.value || '';
       if (!data) { toast('داده‌ای برای خروجی وجود ندارد', 'info'); return; }
