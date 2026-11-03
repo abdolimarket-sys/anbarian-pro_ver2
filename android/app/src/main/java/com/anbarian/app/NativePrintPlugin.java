@@ -64,6 +64,56 @@ public class NativePrintPlugin extends Plugin {
         });
     }
 
+
+    @PluginMethod
+    public void printHtml(PluginCall call) {
+        String html = call.getString("html", "");
+        String title = call.getString("title", "Anbarin-Report");
+        if (html == null || html.trim().isEmpty()) {
+            call.reject("محتوای گزارش برای چاپ خالی است");
+            return;
+        }
+        getActivity().runOnUiThread(() -> {
+            try {
+                printWebView = new WebView(getContext());
+                printWebView.getSettings().setJavaScriptEnabled(false);
+                printWebView.setBackgroundColor(android.graphics.Color.WHITE);
+                printWebView.setWebViewClient(new WebViewClient() {
+                    @Override
+                    public void onPageFinished(WebView view, String url) {
+                        super.onPageFinished(view, url);
+                        try {
+                            PrintManager manager = (PrintManager) getContext().getSystemService(Context.PRINT_SERVICE);
+                            if (manager == null) {
+                                call.reject("سرویس چاپ اندروید در دسترس نیست");
+                                cleanup();
+                                return;
+                            }
+                            PrintAttributes attributes = new PrintAttributes.Builder()
+                                .setMediaSize(PrintAttributes.MediaSize.ISO_A4)
+                                .setResolution(new PrintAttributes.Resolution("anbarin-report", "Anbarin Report", 300, 300))
+                                .setColorMode(PrintAttributes.COLOR_MODE_COLOR)
+                                .setMinMargins(new PrintAttributes.Margins(250, 250, 250, 250))
+                                .build();
+                            manager.print(title, view.createPrintDocumentAdapter(title), attributes);
+                            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> cleanup(), 120000);
+                            JSObject response = new JSObject();
+                            response.put("started", true);
+                            call.resolve(response);
+                        } catch (Exception e) {
+                            call.reject("باز کردن پنجره چاپ ناموفق بود: " + e.getMessage(), e);
+                            cleanup();
+                        }
+                    }
+                });
+                printWebView.loadDataWithBaseURL("https://localhost/", html, "text/html", "UTF-8", null);
+            } catch (Exception e) {
+                call.reject("آماده‌سازی چاپ ناموفق بود: " + e.getMessage(), e);
+                cleanup();
+            }
+        });
+    }
+
     private void cleanup() {
         if (printWebView != null) {
             printWebView.destroy();
