@@ -15,6 +15,8 @@ import {
 import { toast, showPage, loadTheme } from './modules/ui';
 import { findProductByCode } from './modules/state';
 import { initLocalAuth } from './modules/local-auth';
+import { initAccountingUI } from './modules/accounting-ui';
+import { initAccountingCommerceUI } from './modules/accounting-commerce-ui';
 
 // پیام نهایی ذخیره‌سازی فایل در اپ اندروید (پس از انتخاب پوشه و نوشتن موفق).
 window.addEventListener('anbarin:file-saved', (event: Event) => {
@@ -270,6 +272,8 @@ async function bootApp() {
     renderShell();
     initLocalAuth();
     initScannerModule();
+    await initAccountingUI();
+    await initAccountingCommerceUI();
     setCountChangeListener(() => {
       updateHeader();
       updateUndoBtn();
@@ -457,6 +461,15 @@ function renderShell() {
             <button class="btn btn-primary btn-block" id="btnApplySystem">✔ اعمال شمارش روی موجودی سیستم</button>
             <button class="btn btn-secondary btn-block" id="btnResetToSystem">شمارش = مقدار سیستم</button>
           </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-accounting">
+        <div class="card">
+          <h2>حسابداری حرفه‌ای</h2>
+          <p class="hint">هسته حسابداری ایران — کدینگ قابل ویرایش، سال مالی شمسی و اسناد دوطرفه. مبالغ در پایگاه داده به ریال ذخیره می‌شوند.</p>
+          <div id="accountingWorkspace"><p class="hint">در حال بارگذاری حسابداری...</p></div>
+          <div id="accountingCommerceWorkspace"><p class="hint">در حال بارگذاری فاکتورها و دریافت‌وپرداخت...</p></div>
         </div>
       </section>
 
@@ -659,6 +672,7 @@ function renderShell() {
       <button class="nav-item active" data-page="count">شمارش</button>
       <button class="nav-item" data-page="products">کالاها</button>
       <button class="nav-item" data-page="reports">گزارش</button>
+      <button class="nav-item" data-page="accounting">حسابداری</button>
       <button class="nav-item" data-page="audit">لاگ</button>
       <button class="nav-item" data-page="admin">تنظیمات</button>
     </nav>
