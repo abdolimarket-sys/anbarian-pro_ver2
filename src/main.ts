@@ -316,6 +316,13 @@ function initScannerModule() {
     canScan: () => canCount(),
     isQtyModalOpen: () => isQtyModalOpen(),
     onScan: (result: ScanResult) => {
+      if ((window as any).__anbarinInvoiceScanActive) {
+        (window as any).__anbarinInvoiceScanActive = false;
+        const continuous = document.getElementById('scannerContinuous') as HTMLInputElement | null;
+        if (continuous) continuous.checked = (window as any).__anbarinScannerContinuousBeforeInvoice ?? true;
+        window.dispatchEvent(new CustomEvent('anbarin:invoice-barcode-scan', { detail: { code: result.code } }));
+        return;
+      }
       handleScannedCode(result.code, {
         onNotFound: (code) => offerAddProduct(code),
       });
@@ -823,6 +830,7 @@ function bindEvents() {
   document.getElementById('btnRunDataHealth')?.addEventListener('click', () => { void renderDataHealth(); });
 
   document.getElementById('btnOpenScanner')?.addEventListener('click', () => {
+    (window as any).__anbarinInvoiceScanActive = false;
     if (!guardWrite('اسکن')) return;
     const modal = document.getElementById('scannerModal');
     if (modal) modal.style.display = 'flex';
@@ -831,6 +839,7 @@ function bindEvents() {
   });
 
   document.getElementById('btnQuickCount')?.addEventListener('click', () => {
+    (window as any).__anbarinInvoiceScanActive = false;
     if (!guardWrite('شمارش سریع')) return;
     settings.quickAutoConfirm = true;
     const modal = document.getElementById('scannerModal');
@@ -839,6 +848,9 @@ function bindEvents() {
   });
 
   document.getElementById('btnCloseScanner')?.addEventListener('click', () => {
+    (window as any).__anbarinInvoiceScanActive = false;
+    const continuous = document.getElementById('scannerContinuous') as HTMLInputElement | null;
+    if (continuous) continuous.checked = (window as any).__anbarinScannerContinuousBeforeInvoice ?? true;
     settings.quickAutoConfirm = false;
     closeScanner();
     const modal = document.getElementById('scannerModal');

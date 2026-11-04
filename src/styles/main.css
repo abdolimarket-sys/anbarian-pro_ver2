@@ -771,3 +771,42 @@ select.search-input {
 .health-finding p{margin:4px 0 0;font-size:.8rem;color:var(--text-soft)}.health-finding strong{font-size:1.1rem}
 .health-error{border-right-color:#c33}.health-warning{border-right-color:#c58a20}.health-ok{border-right-color:#32966b}
 @media(max-width:520px){.health-summary{grid-template-columns:repeat(3,minmax(0,1fr))}.health-finding{align-items:flex-start}}
+
+/* فاز ۶۴ — صفحه‌های مستقل و مرتب فاکتور خرید، فروش و دریافت/پرداخت */
+#accountingCommerceWorkspace .commerce-section-nav{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 18px;padding:8px;background:var(--surface-muted,#f5f7fa);border:1px solid var(--border-color,#d8dee8);border-radius:14px}
+#accountingCommerceWorkspace .commerce-section-nav .btn{min-width:132px;justify-content:center;border-radius:10px}
+#accountingCommerceWorkspace .commerce-page-header{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:4px 0 16px;padding:18px 20px;border:1px solid var(--border-color,#d8dee8);border-radius:16px;background:linear-gradient(135deg,var(--surface,#fff),var(--surface-muted,#f5f7fa))}
+#accountingCommerceWorkspace .commerce-page-header h2{margin:0 0 5px;font-size:1.35rem}
+#accountingCommerceWorkspace .commerce-page-header p{margin:0;color:var(--text-muted,#667085);font-size:.9rem}
+#accountingCommerceWorkspace .commerce-page-chip{padding:7px 14px;border-radius:999px;background:var(--surface-muted,#edf2f7);border:1px solid var(--border-color,#d8dee8);font-weight:700;white-space:nowrap}
+#accountingCommerceWorkspace .commerce-invoice-card{padding:18px;border-radius:16px}
+#accountingCommerceWorkspace .commerce-invoice-card>h3{margin-top:0;padding-bottom:12px;border-bottom:1px solid var(--border-color,#d8dee8)}
+#accountingCommerceWorkspace .commerce-invoice-card .form-grid{gap:14px}
+#accountingCommerceWorkspace .commerce-invoice-card .field input,#accountingCommerceWorkspace .commerce-invoice-card .field select,#accountingCommerceWorkspace .commerce-invoice-card .field textarea{min-height:42px;border-radius:9px}
+#accountingCommerceWorkspace .commerce-parties-panel{padding:14px 16px;border:1px solid var(--border-color,#d8dee8);border-radius:14px}
+#accountingCommerceWorkspace .commerce-parties-panel>summary{cursor:pointer;font-weight:750;list-style-position:inside}
+#accountingCommerceWorkspace .commerce-parties-panel[open]>summary{margin-bottom:14px}
+#accountingCommerceWorkspace .commerce-invoice-card .data-table th{white-space:nowrap}
+@media(max-width:640px){#accountingCommerceWorkspace .commerce-page-header{align-items:flex-start;padding:14px}#accountingCommerceWorkspace .commerce-section-nav .btn{flex:1;min-width:0}}
+
+
+/* فاز ۶۵ — فرم فاکتور منظم، جست‌وجوی کالا و ابزار بارکد */
+#accountingCommerceWorkspace .invoice-product-tools{display:grid;grid-template-columns:minmax(180px,2fr) auto minmax(160px,1.5fr) auto auto;gap:10px;align-items:end;margin:12px 0 16px;padding:12px;border:1px solid var(--border-color,#d8dee8);border-radius:12px;background:var(--surface-muted,#f7f8fa)}
+#accountingCommerceWorkspace .invoice-product-tools .field{margin:0;min-width:0}
+#accountingCommerceWorkspace .invoice-product-tools .btn{min-height:42px;white-space:nowrap}
+#accountingCommerceWorkspace .invoice-calendar-field{display:flex;flex-direction:column;gap:6px;min-width:0}
+#accountingCommerceWorkspace .invoice-calendar-field input{min-height:42px}
+#accountingCommerceWorkspace .commerce-invoice-card .commerce-line{display:grid;grid-template-columns:minmax(150px,1.3fr) minmax(150px,1.4fr) repeat(4,minmax(100px,.8fr)) minmax(110px,.9fr) auto;gap:9px;align-items:end;border:1px solid var(--border-color,#e0e4ea)!important;border-radius:10px;padding:12px!important;margin:9px 0!important;background:var(--surface,#fff)}
+#accountingCommerceWorkspace .commerce-invoice-card .commerce-line .field{min-width:0}
+#accountingCommerceWorkspace .commerce-invoice-card .commerce-line [data-line-total]{font-weight:800}
+@media(max-width:900px){#accountingCommerceWorkspace .invoice-product-tools{grid-template-columns:1fr 1fr}#accountingCommerceWorkspace .commerce-invoice-card .commerce-line{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:520px){#accountingCommerceWorkspace .invoice-product-tools{grid-template-columns:1fr}#accountingCommerceWorkspace .commerce-invoice-card .commerce-line{grid-template-columns:1fr 1fr}#accountingCommerceWorkspace .invoice-calendar-field{grid-column:auto}}
+
+/* فاز ۶۶ — پنجره ثبت دریافت/پرداخت از داخل فاکتور */
+.commerce-settlement-backdrop{position:fixed;inset:0;z-index:1200;display:flex;align-items:center;justify-content:center;padding:18px;background:rgba(15,23,42,.58);backdrop-filter:blur(3px)}
+.commerce-settlement-backdrop[hidden]{display:none!important}
+.commerce-settlement-dialog{width:min(760px,100%);max-height:min(90vh,820px);overflow:auto;background:var(--card-bg,#fff);color:var(--text-color,inherit);border:1px solid var(--border-color,#ddd);border-radius:18px;padding:20px;box-shadow:0 24px 80px rgba(0,0,0,.25)}
+.commerce-settlement-head,.commerce-settlement-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.commerce-settlement-head h3{margin:0 0 5px}.commerce-settlement-actions{justify-content:flex-end;margin-top:16px}
+.commerce-settlement-dialog [data-settlement-cheque][hidden]{display:none!important}
+@media(max-width:600px){.commerce-settlement-backdrop{padding:8px;align-items:flex-end}.commerce-settlement-dialog{border-radius:18px 18px 10px 10px;padding:14px;max-height:94vh}}
