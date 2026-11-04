@@ -13,6 +13,6 @@ test('phase 49 adds a unified management dashboard to the commerce workspace',()
  assert.match(ui,/کالاهای در حداقل موجودی/);
 });
 test('phase 49 dashboard is included before the existing accounting workflows',()=>{
- assert.ok(ui.includes('root.innerHTML=`\n  ${await managementDashboardPanel()}'));
+ assert.match(ui,/activeCommerceSection==='sale'\?await managementDashboardPanel\(\):''/);
  assert.match(ui,/\$\{await profitabilityPanel\(\)\}/);
 });
