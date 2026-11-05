@@ -743,9 +743,6 @@ select.search-input {
 .commerce-invoice-card .commerce-lines-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:18px 0 8px;padding-bottom:8px;border-bottom:1px solid var(--border-color,#d8dee8)}
 .commerce-invoice-card .commerce-line{grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px;margin:8px 0}
 .commerce-invoice-card .commerce-line [readonly]{background:var(--surface-muted,#f4f6f8);font-weight:700}
-.commerce-seller-profile{margin:10px 0 16px;padding:12px;border:1px solid var(--border-color,#d8dee8);border-radius:10px}
-.commerce-seller-profile summary{cursor:pointer;font-weight:700}
-.commerce-seller-profile .form-grid{margin-top:12px}
 .commerce-invoice-summary{max-width:520px;margin:14px 0 14px auto;padding:12px;border:1px solid var(--border-color,#d8dee8);border-radius:10px}
 .commerce-invoice-summary>div{display:flex;justify-content:space-between;gap:12px;padding:7px 2px;border-bottom:1px solid var(--border-color,#e5e7eb)}
 .commerce-invoice-summary>div:last-child{border-bottom:0}
@@ -979,3 +976,14 @@ details[open] > .category-summary .category-chevron { transform: rotate(180deg);
   .accounting-home-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
   .accounting-home-tile { min-height: 128px; font-size: 1rem; }
 }
+
+/* سند حسابداری چندردیفی */
+.accounting-voucher-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:14px 0 8px}
+.accounting-voucher-lines{display:grid;gap:10px}
+.accounting-voucher-line{display:grid;grid-template-columns:minmax(150px,1.2fr) minmax(130px,1fr) minmax(110px,.8fr) minmax(110px,.8fr) auto;gap:8px;align-items:end;padding:10px;border:1px solid var(--border-color, #ddd);border-radius:12px;background:var(--surface-subtle, rgba(127,127,127,.04))}
+.accounting-voucher-line .field{margin:0;min-width:0}
+.accounting-voucher-line [data-je-remove]{white-space:nowrap}
+@media(max-width:760px){.accounting-voucher-line{grid-template-columns:1fr 1fr}.accounting-voucher-line .field:first-child,.accounting-voucher-line .field:nth-child(2){grid-column:span 2}.accounting-voucher-line [data-je-remove]{grid-column:span 2}}
+
+/* انتخاب تاریخ صدور با تقویم شمسی */
+.invoice-jalali-date{display:flex;gap:6px;align-items:center}.invoice-jalali-date input{flex:1;min-width:0}.invoice-jalali-calendar{position:relative;z-index:20;margin-top:6px;padding:10px;border:1px solid var(--border-color,#cbd5e1);border-radius:10px;background:var(--card-bg,#fff);box-shadow:0 8px 24px #0002;max-width:320px}.jalali-cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}.jalali-cal-head button,.jalali-cal-grid button{border:1px solid var(--border-color,#ddd);background:var(--card-bg,#fff);border-radius:7px;padding:6px 9px;cursor:pointer;color:inherit}.jalali-cal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;text-align:center}.jalali-cal-grid .weekday{font-weight:700;padding:5px 0}.jalali-cal-grid button:hover{background:var(--primary,#2563eb);color:white}

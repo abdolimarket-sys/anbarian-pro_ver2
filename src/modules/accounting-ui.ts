@@ -56,12 +56,27 @@ function renderJournals(): string {
   if (!data) return '';
   return `<div class="table-wrap"><table class="data-table"><thead><tr><th>شماره</th><th>تاریخ</th><th>شرح</th><th>بدهکار</th><th>بستانکار</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody>${data.journalEntries.map(j=>{const d=j.lines.reduce((s,l)=>s+l.debitRial,0),c=j.lines.reduce((s,l)=>s+l.creditRial,0);return `<tr><td>${esc(j.number)}</td><td>${esc(j.date)}</td><td>${esc(j.description)}</td><td>${fa(d)}</td><td>${fa(c)}</td><td>${j.status==='posted'?'قطعی':'پیش‌نویس'}</td><td>${j.status==='draft'?`<button class="btn btn-sm btn-primary" data-post-journal="${j.id}">قطعی‌سازی</button>`:'قفل‌شده'}</td></tr>`}).join('') || '<tr><td colspan="7">هنوز سندی ثبت نشده است.</td></tr>'}</tbody></table></div>`;
 }
+function renderJournalLineEditor(count: number): string {
+  if (!data) return '';
+  const opts = accountOptions('detail');
+  return Array.from({length: count}, (_, i) => `<div class="accounting-voucher-line" data-je-line="${i}"><label class="field">حساب<select data-je-account><option value="">انتخاب حساب</option>${opts}</select></label><label class="field">شرح ردیف<input data-je-description placeholder="شرح آرتیکل"></label><label class="field">بدهکار (<span>${data.settings.currencyDisplay==='toman'?'تومان':'ریال'}</span>)<input data-je-debit inputmode="decimal" placeholder="۰"></label><label class="field">بستانکار (<span>${data.settings.currencyDisplay==='toman'?'تومان':'ریال'}</span>)<input data-je-credit inputmode="decimal" placeholder="۰"></label><button type="button" class="btn btn-sm btn-secondary" data-je-remove aria-label="حذف ردیف" ${i<2?'disabled':''}>حذف</button></div>`).join('');
+}
+function updateJournalTotals(): void {
+  if (!data) return;
+  let debit=0, credit=0;
+  document.querySelectorAll<HTMLElement>('[data-je-line]').forEach(row=>{
+    try { debit += parseMoneyToRial(normalizeDigits(row.querySelector<HTMLInputElement>('[data-je-debit]')?.value||'0')||'0',data!.settings.currencyDisplay); } catch {}
+    try { credit += parseMoneyToRial(normalizeDigits(row.querySelector<HTMLInputElement>('[data-je-credit]')?.value||'0')||'0',data!.settings.currencyDisplay); } catch {}
+  });
+  const node=el<HTMLElement>('#jeTotals'); if(node) node.textContent=`جمع بدهکار: ${fa(debit)} | جمع بستانکار: ${fa(credit)} | ${debit===credit&&debit>0?'سند متوازن':'اختلاف: '+fa(Math.abs(debit-credit))}`;
+}
 function render(): void {
   const root = el<HTMLDivElement>('#accountingWorkspace'); if (!root || !data) return;
   root.innerHTML = `
     <nav class="accounting-shortcuts" aria-label="بخش‌های حسابداری">${accountingTabs.map(t=>`<button type="button" class="accounting-shortcut" data-acc-tab="${t.id}" aria-pressed="false"><span class="accounting-shortcut-icon" aria-hidden="true">${t.icon}</span><span>${t.label}</span></button>`).join('')}</nav>
     <section class="acc-section" data-acc-section="overview">
-      <div class="accounting-home-grid" aria-label="دسته‌بندی عملیات حسابداری">
+      <p class="accounting-overview-hint">عملیات روزمره را از اینجا انتخاب کنید؛ گزارش‌ها، اسناد، کدینگ و سال مالی از نوار بالای حسابداری در دسترس‌اند.</p>
+      <div class="accounting-home-grid" aria-label="عملیات پرکاربرد حسابداری">
         <button type="button" class="accounting-home-tile" data-acc-menu="people"><span class="accounting-home-icon people">👥</span><span>صورت‌حساب اشخاص</span></button>
         <button type="button" class="accounting-home-tile" data-acc-menu="party"><span class="accounting-home-icon party">👤＋</span><span>تعریف شخص</span></button>
         <button type="button" class="accounting-home-tile" data-acc-menu="inventory"><span class="accounting-home-icon inventory">🏢</span><span>انبار</span></button>
@@ -69,13 +84,6 @@ function render(): void {
         <button type="button" class="accounting-home-tile" data-acc-menu="receipt"><span class="accounting-home-icon receipt">▣</span><span>دریافت وجه</span></button>
         <button type="button" class="accounting-home-tile" data-acc-menu="payment"><span class="accounting-home-icon payment">▣</span><span>پرداخت وجه</span></button>
         <button type="button" class="accounting-home-tile" data-acc-menu="other"><span class="accounting-home-icon other">◉</span><span>عملیات دیگر</span></button>
-        <button type="button" class="accounting-home-tile" data-acc-menu="messages"><span class="accounting-home-icon messages">☎</span><span>گردش طرف حساب‌ها</span></button>
-        <button type="button" class="accounting-home-tile" data-acc-menu="expense"><span class="accounting-home-icon expense">↘</span><span>صدور هزینه</span></button>
-        <button type="button" class="accounting-home-tile" data-acc-menu="income"><span class="accounting-home-icon income">↗</span><span>صدور درآمد</span></button>
-        <button type="button" class="accounting-home-tile" data-acc-menu="reports"><span class="accounting-home-icon reports">▥</span><span>گزارش‌های مالی</span></button>
-        <button type="button" class="accounting-home-tile" data-acc-menu="journals"><span class="accounting-home-icon journals">▤</span><span>اسناد حسابداری</span></button>
-        <button type="button" class="accounting-home-tile" data-acc-menu="accounts"><span class="accounting-home-icon accounts">▦</span><span>کدینگ حساب‌ها</span></button>
-        <button type="button" class="accounting-home-tile" data-acc-menu="fiscal"><span class="accounting-home-icon fiscal">▣</span><span>سال مالی</span></button>
         <button type="button" class="accounting-home-tile" data-acc-menu="banking"><span class="accounting-home-icon banking">🏦</span><span>بانک و صندوق</span></button>
         <button type="button" class="accounting-home-tile" data-acc-menu="cheques"><span class="accounting-home-icon cheques">💳</span><span>مدیریت چک‌ها</span></button>
       </div>
@@ -84,23 +92,43 @@ function render(): void {
     <section class="acc-section" data-acc-section="settings"><div class="card accounting-inner-card"><h3>تنظیمات حسابداری</h3><label class="field">واحد نمایش مبالغ<select id="accCurrency"><option value="toman" ${data.settings.currencyDisplay==='toman'?'selected':''}>تومان</option><option value="rial" ${data.settings.currencyDisplay==='rial'?'selected':''}>ریال</option></select></label><button class="btn btn-primary" id="accSaveCurrency">ذخیره تنظیمات</button><p class="hint">مبالغ همیشه به ریال ذخیره می‌شوند؛ این گزینه فقط نحوه نمایش را تغییر می‌دهد.</p></div>
     </section><section class="acc-section" data-acc-section="accounts"><div class="card accounting-inner-card"><h3>کدینگ حساب‌ها</h3><div class="form-grid"><label class="field">کد حساب<input id="accCode" placeholder="مثلاً 110103"></label><label class="field">عنوان حساب<input id="accTitle" placeholder="عنوان حساب"></label><label class="field">سطح حساب<select id="accLevel"><option value="group">گروه</option><option value="general">کل</option><option value="subsidiary">معین</option><option value="detail">تفصیلی</option></select></label><label class="field">حساب والد<select id="accParent"><option value="">بدون والد</option>${accountOptions()}</select></label><label class="field">ماهیت<select id="accNature"><option value="debit">بدهکار</option><option value="credit">بستانکار</option></select></label></div><div class="actions"><button class="btn btn-primary" id="accAddAccount">افزودن حساب</button><button class="btn btn-secondary" id="accCancelEdit" hidden>لغو ویرایش</button></div><input type="hidden" id="accEditId">${renderAccounts()}</div>
     </section><section class="acc-section" data-acc-section="fiscal"><div class="card accounting-inner-card"><h3>سال مالی شمسی</h3><div class="form-grid"><label class="field">عنوان<input id="fyTitle" placeholder="مثلاً سال مالی ۱۴۰۵"></label><label class="field">تاریخ شروع<input id="fyStart" placeholder="۱۴۰۵/۰۱/۰۱"></label><label class="field">تاریخ پایان<input id="fyEnd" placeholder="۱۴۰۵/۱۲/۲۹"></label></div><button class="btn btn-primary" id="fyCreate">ایجاد سال مالی</button>${renderPeriods()}</div>
-    </div></section><section class="acc-section" data-acc-section="journals"><div class="card accounting-inner-card"><h3>ثبت سند حسابداری</h3><p class="hint">ثبت دو ردیف متوازن؛ حساب‌های قابل انتخاب باید در سطح تفصیلی باشند.</p><div class="form-grid"><label class="field">شماره سند<input id="jeNumber" placeholder="مثلاً ۱۰۰۱"></label><label class="field">سال مالی<select id="jePeriod"><option value="">انتخاب سال مالی</option>${data.fiscalPeriods.filter(p=>p.status==='open').map(p=>`<option value="${p.id}">${esc(p.title)}</option>`).join('')}</select></label><label class="field">تاریخ شمسی<input id="jeDate" placeholder="۱۴۰۵/۰۱/۰۱"></label><label class="field">شرح سند<input id="jeDescription" placeholder="شرح مختصر"></label></div><div class="form-grid"><label class="field">حساب بدهکار<select id="jeDebit"><option value="">انتخاب حساب</option>${accountOptions('detail')}</select></label><label class="field">حساب بستانکار<select id="jeCredit"><option value="">انتخاب حساب</option>${accountOptions('detail')}</select></label><label class="field">مبلغ (<span id="jeUnit">${data.settings.currencyDisplay==='toman'?'تومان':'ریال'}</span>)<input id="jeAmount" inputmode="decimal" placeholder="۰"></label></div><button class="btn btn-primary" id="jeSave">ثبت پیش‌نویس سند</button>${renderJournals()}</div></section>`;
+    </div></section><section class="acc-section" data-acc-section="journals"><div class="card accounting-inner-card"><h3>ثبت سند حسابداری</h3><p class="hint">ثبت دو ردیف متوازن؛ حساب‌های قابل انتخاب باید در سطح تفصیلی باشند.</p><div class="form-grid"><label class="field">شماره سند<input id="jeNumber" placeholder="مثلاً ۱۰۰۱"></label><label class="field">سال مالی<select id="jePeriod"><option value="">انتخاب سال مالی</option>${data.fiscalPeriods.filter(p=>p.status==='open').map(p=>`<option value="${p.id}">${esc(p.title)}</option>`).join('')}</select></label><label class="field">تاریخ شمسی<input id="jeDate" placeholder="۱۴۰۵/۰۱/۰۱"></label><label class="field">شرح سند<input id="jeDescription" placeholder="شرح مختصر"></label></div><div class="accounting-voucher-head"><strong>آرتیکل‌های سند</strong><span class="hint">هر سند می‌تواند چندین ردیف بدهکار و بستانکار داشته باشد.</span></div><div id="jeLines" class="accounting-voucher-lines">${renderJournalLineEditor(2)}</div><div class="actions"><button type="button" class="btn btn-secondary" id="jeAddLine">افزودن ردیف</button><span id="jeTotals" class="hint">جمع بدهکار و بستانکار: ۰</span></div><button class="btn btn-primary" id="jeSave">ثبت پیش‌نویس سند</button>${renderJournals()}</div></section>`;
   applyAccountingTab();
   bind();
 }
 async function persist(next: AccountingData): Promise<void> { data = next; await saveAccountingData(next); render(); window.dispatchEvent(new Event('accounting:data-updated')); }
+function bindJournalLineEvents(): void {
+  document.querySelectorAll<HTMLElement>('[data-je-line] [data-je-remove]').forEach(button=>button.addEventListener('click',()=>{const rows=document.querySelectorAll('[data-je-line]');if(rows.length<=2){toast('سند باید حداقل دو ردیف داشته باشد','error');return;}button.closest('[data-je-line]')?.remove();updateJournalTotals();}));
+  document.querySelectorAll<HTMLInputElement>('[data-je-debit], [data-je-credit]').forEach(input=>input.addEventListener('input',updateJournalTotals));
+}
 function bind(): void {
   document.querySelectorAll<HTMLButtonElement>('[data-acc-tab]').forEach(button => button.addEventListener('click',()=>{activeAccountingTab=button.dataset.accTab||'overview';applyAccountingTab()}));
-  document.querySelectorAll<HTMLButtonElement>('[data-acc-menu]').forEach(button => button.addEventListener('click',()=>{
+  document.querySelectorAll<HTMLButtonElement>('[data-acc-menu]').forEach(button=>button.addEventListener('click',()=>{
     const action=button.dataset.accMenu||'';
-    const commerceActions:Record<string,string>={people:'aging',party:'sale',inventory:'inventory',invoice:'sale',receipt:'receipts',payment:'receipts',other:'management',messages:'aging',banking:'banking',cheques:'cheques'};
-    const tab=action==='reports'?'reports':(['journals','expense','income'].includes(action)?'journals':action==='accounts'?'accounts':action==='fiscal'?'fiscal':commerceActions[action]?'commerce':'overview');
+    const commerceActions:Record<string,string>={people:'aging',party:'sale',inventory:'inventory',invoice:'sale',receipt:'receipts',payment:'receipts',other:'management',banking:'banking',cheques:'cheques'};
+    const directTabs:Record<string,string>={reports:'reports',journals:'journals',accounts:'accounts',fiscal:'fiscal'};
+    const tab=directTabs[action] || (commerceActions[action]?'commerce':'overview');
     activeAccountingTab=tab;applyAccountingTab();
     if(tab==='commerce'){
-      const target=commerceActions[action];
-      const openTarget=()=>{const btn=el<HTMLButtonElement>(`#accountingCommerceWorkspace [data-commerce-tab="${target}"]`);if(btn)btn.click();if(action==='party'){const panel=el<HTMLDetailsElement>('#accountingCommerceWorkspace .commerce-parties-panel');if(panel)panel.open=true;}if(action==='payment'){const type=el<HTMLSelectElement>('#accountingCommerceWorkspace #cashType');if(type)type.value='payment';}};
-      openTarget();requestAnimationFrame(openTarget);
-    }
+      const target=commerceActions[action]; let attempts=0;
+      const openTarget=()=>{
+        const root=el<HTMLElement>('#accountingCommerceWorkspace');
+        const targetButton=root?.querySelector<HTMLButtonElement>(`[data-commerce-tab="${target}"]`);
+        if(targetButton){
+          targetButton.click();
+          if(action==='party'){const panel=root?.querySelector<HTMLDetailsElement>('.commerce-parties-panel');if(panel)panel.open=true;}
+          if(action==='payment'||action==='receipt'){
+            const type=root?.querySelector<HTMLSelectElement>('#cashType');
+            if(type){type.value=action==='payment'?'payment':'receipt';type.dispatchEvent(new Event('change',{bubbles:true}));}
+          }
+          const section=target==='sale'||target==='purchase'?'invoices':target;
+          (root?.querySelector<HTMLElement>(`[data-commerce-section="${section}"]`)||root)?.scrollIntoView({behavior:'smooth',block:'start'});
+          return;
+        }
+        if(++attempts<30)requestAnimationFrame(openTarget);
+      };
+      requestAnimationFrame(openTarget);
+    } else el<HTMLElement>(`[data-acc-section="${tab}"]`)?.scrollIntoView({behavior:'smooth',block:'start'});
   }));
   el<HTMLButtonElement>('#accSaveCurrency')?.addEventListener('click', async()=>{if(!data)return;data.settings.currencyDisplay=el<HTMLSelectElement>('#accCurrency')!.value as 'rial'|'toman';await persist(data);toast('تنظیم واحد پول ذخیره شد','success')});
   const level=el<HTMLSelectElement>('#accLevel')!; const parent=el<HTMLSelectElement>('#accParent')!;
@@ -111,7 +139,9 @@ function bind(): void {
   document.querySelectorAll<HTMLElement>('[data-toggle-account]').forEach(b=>b.addEventListener('click',async()=>{if(!data)return;const a=data.accounts.find(x=>x.id===b.dataset.toggleAccount);if(!a)return;try{await persist({...data,accounts:data.accounts.map(x=>x.id===a.id?{...x,isActive:!x.isActive,updatedAt:new Date().toISOString()}:x)});toast('وضعیت حساب تغییر کرد','success')}catch{toast('تغییر وضعیت انجام نشد','error')}}));
   el<HTMLButtonElement>('#fyCreate')?.addEventListener('click',async()=>{if(!data)return;try{const p=createFiscalPeriod({title:el<HTMLInputElement>('#fyTitle')!.value,startDate:normalizeDigits(el<HTMLInputElement>('#fyStart')!.value),endDate:normalizeDigits(el<HTMLInputElement>('#fyEnd')!.value)},data.fiscalPeriods);await persist({...data,fiscalPeriods:[...data.fiscalPeriods,p]});toast('سال مالی ایجاد شد','success')}catch(e){toast(e instanceof Error?e.message:'خطا در ایجاد سال مالی','error')}});
   document.querySelectorAll<HTMLElement>('[data-close-period]').forEach(b=>b.addEventListener('click',async()=>{if(!data)return;try{const {closeFiscalPeriod}=await import('./accounting');await persist(closeFiscalPeriod(data,b.dataset.closePeriod!));toast('سال مالی بسته شد','success')}catch(e){toast(e instanceof Error?e.message:'خطا','error')}}));
-  el<HTMLButtonElement>('#jeSave')?.addEventListener('click',async()=>{if(!data)return;try{const amount=parseMoneyToRial(normalizeDigits(el<HTMLInputElement>('#jeAmount')!.value),data.settings.currencyDisplay);const number=el<HTMLInputElement>('#jeNumber')!.value.trim();if(!number)throw new Error('شماره سند الزامی است.');const date=normalizeDigits(el<HTMLInputElement>('#jeDate')!.value);const entry:JournalEntry={id:id('je'),number,fiscalPeriodId:el<HTMLSelectElement>('#jePeriod')!.value,date,description:el<HTMLInputElement>('#jeDescription')!.value.trim(),status:'draft',source:'manual',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),lines:[{id:id('line'),accountId:el<HTMLSelectElement>('#jeDebit')!.value,description:'بدهکار',debitRial:amount,creditRial:0},{id:id('line'),accountId:el<HTMLSelectElement>('#jeCredit')!.value,description:'بستانکار',debitRial:0,creditRial:amount}]};await persist(upsertJournalEntry(data,entry));toast('پیش‌نویس سند ذخیره شد','success')}catch(e){toast(e instanceof Error?e.message:'خطا در ثبت سند','error')}});
+  el<HTMLButtonElement>('#jeAddLine')?.addEventListener('click',()=>{const host=el<HTMLElement>('#jeLines');if(!host)return;host.insertAdjacentHTML('beforeend',renderJournalLineEditor(host.querySelectorAll('[data-je-line]').length+1));bindJournalLineEvents();});
+  bindJournalLineEvents();
+  el<HTMLButtonElement>('#jeSave')?.addEventListener('click',async()=>{if(!data)return;try{const number=el<HTMLInputElement>('#jeNumber')!.value.trim();if(!number)throw new Error('شماره سند الزامی است.');const lines:JournalEntry['lines']=[];document.querySelectorAll<HTMLElement>('[data-je-line]').forEach(row=>{const accountId=row.querySelector<HTMLSelectElement>('[data-je-account]')!.value;const debitText=normalizeDigits(row.querySelector<HTMLInputElement>('[data-je-debit]')!.value||'0');const creditText=normalizeDigits(row.querySelector<HTMLInputElement>('[data-je-credit]')!.value||'0');const debitRial=parseMoneyToRial(debitText,data!.settings.currencyDisplay);const creditRial=parseMoneyToRial(creditText,data!.settings.currencyDisplay);if(accountId||debitRial||creditRial)lines.push({id:id('line'),accountId,description:row.querySelector<HTMLInputElement>('[data-je-description]')!.value.trim(),debitRial,creditRial});});const entry:JournalEntry={id:id('je'),number,fiscalPeriodId:el<HTMLSelectElement>('#jePeriod')!.value,date:normalizeDigits(el<HTMLInputElement>('#jeDate')!.value),description:el<HTMLInputElement>('#jeDescription')!.value.trim(),status:'draft',source:'manual',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),lines};await persist(upsertJournalEntry(data,entry));toast('پیش‌نویس سند ذخیره شد','success')}catch(e){toast(e instanceof Error?e.message:'خطا در ثبت سند','error')}});
   document.querySelectorAll<HTMLElement>('[data-post-journal]').forEach(b=>b.addEventListener('click',async()=>{if(!data)return;try{await persist(postJournalEntry(data,b.dataset.postJournal!));toast('سند قطعی شد','success')}catch(e){toast(e instanceof Error?e.message:'خطا','error')}}));
 }
 export async function initAccountingUI(): Promise<void> {

@@ -126,6 +126,29 @@ export const SUGGESTED_CHART = [
   { id: 'det-input-tax', code: '110401', title: 'مالیات ارزش افزوده خرید', level: 'detail', nature: 'debit', parentId: 'sub-input-tax', isActive: true, isSystem: true },
   { id: 'sub-output-tax', code: '2102', title: 'مالیات و عوارض ارزش افزوده فروش', level: 'subsidiary', nature: 'credit', parentId: 'acc-current-liabilities', isActive: true, isSystem: true },
   { id: 'det-output-tax', code: '210201', title: 'مالیات ارزش افزوده فروش', level: 'detail', nature: 'credit', parentId: 'sub-output-tax', isActive: true, isSystem: true },
+  // تکمیل کدینگ استاندارد: دارایی ثابت، بدهی بلندمدت، سرمایه و سرفصل‌های عملکردی
+  { id: 'acc-fixed-assets', code: '12', title: 'دارایی‌های غیرجاری', level: 'general', nature: 'debit', parentId: 'grp-assets', isActive: true, isSystem: true },
+  { id: 'sub-tangible-assets', code: '1201', title: 'دارایی‌های ثابت مشهود', level: 'subsidiary', nature: 'debit', parentId: 'acc-fixed-assets', isActive: true, isSystem: true },
+  { id: 'det-equipment', code: '120101', title: 'تجهیزات و اثاثیه', level: 'detail', nature: 'debit', parentId: 'sub-tangible-assets', isActive: true, isSystem: true },
+  { id: 'det-accum-depr', code: '120102', title: 'استهلاک انباشته دارایی‌ها', level: 'detail', nature: 'credit', parentId: 'sub-tangible-assets', isActive: true, isSystem: true },
+  { id: 'acc-long-liabilities', code: '22', title: 'بدهی‌های غیرجاری', level: 'general', nature: 'credit', parentId: 'grp-liabilities', isActive: true, isSystem: true },
+  { id: 'sub-long-payables', code: '2201', title: 'تسهیلات و اسناد پرداختنی بلندمدت', level: 'subsidiary', nature: 'credit', parentId: 'acc-long-liabilities', isActive: true, isSystem: true },
+  { id: 'det-long-loans', code: '220101', title: 'وام‌ها و تسهیلات بلندمدت', level: 'detail', nature: 'credit', parentId: 'sub-long-payables', isActive: true, isSystem: true },
+  { id: 'acc-capital', code: '31', title: 'سرمایه', level: 'general', nature: 'credit', parentId: 'grp-equity', isActive: true, isSystem: true },
+  { id: 'sub-owner-capital', code: '3101', title: 'سرمایه مالک / شرکا', level: 'subsidiary', nature: 'credit', parentId: 'acc-capital', isActive: true, isSystem: true },
+  { id: 'det-owner-capital', code: '310101', title: 'سرمایه ثبت‌شده', level: 'detail', nature: 'credit', parentId: 'sub-owner-capital', isActive: true, isSystem: true },
+  { id: 'acc-retained', code: '32', title: 'سود و زیان انباشته', level: 'general', nature: 'credit', parentId: 'grp-equity', isActive: true, isSystem: true },
+  { id: 'sub-retained', code: '3201', title: 'سود و زیان سنواتی', level: 'subsidiary', nature: 'credit', parentId: 'acc-retained', isActive: true, isSystem: true },
+  { id: 'det-retained', code: '320101', title: 'سود و زیان انباشته', level: 'detail', nature: 'credit', parentId: 'sub-retained', isActive: true, isSystem: true },
+  { id: 'sub-sales-returns', code: '4102', title: 'برگشت از فروش و تخفیفات', level: 'subsidiary', nature: 'debit', parentId: 'acc-sales', isActive: true, isSystem: true },
+  { id: 'det-sales-returns', code: '410201', title: 'برگشت از فروش', level: 'detail', nature: 'debit', parentId: 'sub-sales-returns', isActive: true, isSystem: true },
+  { id: 'acc-other-income', code: '42', title: 'سایر درآمدها', level: 'general', nature: 'credit', parentId: 'grp-revenue', isActive: true, isSystem: true },
+  { id: 'sub-other-income', code: '4201', title: 'درآمدهای متفرقه', level: 'subsidiary', nature: 'credit', parentId: 'acc-other-income', isActive: true, isSystem: true },
+  { id: 'det-other-income', code: '420101', title: 'سایر درآمدهای عملیاتی', level: 'detail', nature: 'credit', parentId: 'sub-other-income', isActive: true, isSystem: true },
+  { id: 'sub-payroll', code: '6102', title: 'حقوق و دستمزد', level: 'subsidiary', nature: 'debit', parentId: 'acc-operating-expenses', isActive: true, isSystem: true },
+  { id: 'det-payroll', code: '610201', title: 'هزینه حقوق و دستمزد', level: 'detail', nature: 'debit', parentId: 'sub-payroll', isActive: true, isSystem: true },
+  { id: 'sub-rent', code: '6103', title: 'اجاره و نگهداری', level: 'subsidiary', nature: 'debit', parentId: 'acc-operating-expenses', isActive: true, isSystem: true },
+  { id: 'det-rent', code: '610301', title: 'هزینه اجاره', level: 'detail', nature: 'debit', parentId: 'sub-rent', isActive: true, isSystem: true },
 ] satisfies ReadonlyArray<Omit<LedgerAccount, 'createdAt' | 'updatedAt'>>;
 
 export function createEmptyAccountingData(): AccountingData {
@@ -168,11 +191,20 @@ export async function saveAccountingData(data: AccountingData): Promise<void> {
 
 export async function initializeSuggestedChart(): Promise<AccountingData> {
   const data = await loadAccountingData();
-  if (data.accounts.length > 0) return data;
   const timestamp = now();
-  data.accounts = SUGGESTED_CHART.map((account) => ({ ...account, createdAt: timestamp, updatedAt: timestamp }));
-  data.settings.chartInitialized = true;
-  await saveAccountingData(data);
+  // مهاجرت افزایشی و غیرمخرب: کدینگ استاندارد به اطلاعات قبلی اضافه می‌شود؛
+  // حساب‌های سفارشی کاربر و گردش اسناد موجود دست‌نخورده می‌مانند.
+  const knownIds = new Set(data.accounts.map((account) => account.id));
+  const knownCodes = new Set(data.accounts.map((account) => account.code));
+  const missing = SUGGESTED_CHART.filter((account) => !knownIds.has(account.id) && !knownCodes.has(account.code));
+  if (missing.length) {
+    data.accounts = [...data.accounts, ...missing.map((account) => ({ ...account, createdAt: timestamp, updatedAt: timestamp }))];
+    data.settings.chartInitialized = true;
+    await saveAccountingData(data);
+  } else if (!data.settings.chartInitialized && data.accounts.length === 0) {
+    data.settings.chartInitialized = true;
+    await saveAccountingData(data);
+  }
   return data;
 }
 
@@ -295,6 +327,7 @@ export function validateJournalEntry(entry: Pick<JournalEntry, 'fiscalPeriodId' 
     if (entry.date < period.startDate || entry.date > period.endDate) errors.push('تاریخ سند خارج از محدوده سال مالی است.');
   }
   if (requireBalance && entry.lines.length < 2) errors.push('سند باید حداقل دو ردیف داشته باشد.');
+  if (!/^\d{4}\/\d{2}\/\d{2}$/.test(entry.date)) errors.push('تاریخ سند باید به شکل سال/ماه/روز شمسی باشد.');
   let debit = 0;
   let credit = 0;
   for (const line of entry.lines) {
@@ -303,6 +336,7 @@ export function validateJournalEntry(entry: Pick<JournalEntry, 'fiscalPeriodId' 
     if (account && account.level !== 'detail') errors.push(`ثبت مستقیم روی حساب تفصیلی‌پذیر الزامی است: ${account.title}`);
     if (!Number.isSafeInteger(line.debitRial) || !Number.isSafeInteger(line.creditRial) || line.debitRial < 0 || line.creditRial < 0) errors.push('مبالغ بدهکار و بستانکار باید عدد صحیح و نامنفی ریال باشند.');
     if (line.debitRial > 0 && line.creditRial > 0) errors.push('هر ردیف فقط می‌تواند بدهکار یا بستانکار باشد.');
+    if (requireBalance && line.debitRial === 0 && line.creditRial === 0) errors.push('ردیف سند باید مبلغ بدهکار یا بستانکار داشته باشد.');
     debit += line.debitRial;
     credit += line.creditRial;
   }
