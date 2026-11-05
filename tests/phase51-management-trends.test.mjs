@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 const ui=readFileSync(new URL('../src/modules/accounting-commerce-ui.ts',import.meta.url),'utf8');
 test('phase 51 adds monthly management trends for sales, gross profit, expenses, receipts, payments and receivables',()=>{
  assert.match(ui,/getMonthlyProfitabilityTrend\(filter\)/);
- assert.match(ui,/روند ماهانه شاخص‌های مدیریتی — فاز ۵۱/);
+ assert.match(ui,/روند ماهانه شاخص‌های مدیریتی/);
  assert.match(ui,/فروش/);
  assert.match(ui,/سود ناخالص/);
  assert.match(ui,/هزینه ثبت‌شده/);

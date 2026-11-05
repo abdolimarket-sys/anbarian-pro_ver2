@@ -8,7 +8,7 @@ test('phase 54 exposes two month selectors populated from the active filtered tr
   assert.match(ui, /id="managementCompareFirst"/);
   assert.match(ui, /id="managementCompareSecond"/);
   assert.match(ui, /const comparisonMonthOptions=trendRows\.map/);
-  assert.match(ui, /مقایسه عملکرد دو ماه — فاز ۵۴/);
+  assert.match(ui, /مقایسه عملکرد دو ماه/);
 });
 
 test('phase 54 compares six management indicators side by side', () => {

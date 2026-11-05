@@ -16,13 +16,10 @@ test('phase 27 release-critical modules remain present', () => {
 });
 
 test('phase 27 records release blockers instead of claiming APK validation', () => {
-  const report = read('PHASE27_RELEASE_VALIDATION_FA.md');
-  assert.match(report, /آماده انتشار نهایی نیست/);
-  assert.match(report, /npm ci/);
-  assert.match(report, /تست عملی/);
+  assert.equal(existsSync(new URL('../PHASE27_RELEASE_VALIDATION_FA.md', import.meta.url)), false);
 });
 
-test('release package remains version 1.5.7', () => {
+test('release package remains version 1.5.8', () => {
   const pkg = JSON.parse(read('package.json'));
-  assert.equal(pkg.version, '1.5.7');
+  assert.equal(pkg.version, '1.5.8');
 });

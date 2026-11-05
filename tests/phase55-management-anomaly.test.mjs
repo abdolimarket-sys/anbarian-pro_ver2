@@ -37,7 +37,7 @@ test('phase 55 validates threshold bounds', () => {
 });
 
 test('phase 55 adds a threshold selector and read-only alerts to the filtered dashboard', () => {
-  assert.match(ui, /هشدار تغییرات غیرعادی ماهانه — فاز ۵۵/);
+  assert.match(ui, /هشدار تغییرات غیرعادی ماهانه/);
   assert.match(ui, /id="managementAnomalyThreshold"/);
   assert.match(ui, /detectManagementMonthAnomalies\(trendRows,threshold\)/);
   assert.match(ui, /__anbarinManagementCompareRows=trendRows/);

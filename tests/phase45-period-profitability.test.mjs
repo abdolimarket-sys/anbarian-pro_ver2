@@ -13,7 +13,7 @@ test('phase45 isolates posted accounting expenses by fiscal period',()=>{
  assert.match(moduleSource,/buildExpenseAdjustedProfitability\(profit,periodAccounting\)/);
 });
 test('phase45 displays date range and profitability per fiscal period',()=>{
- assert.match(uiSource,/مقایسه عملکرد سال‌های مالی — فاز ۴۵/);
+ assert.match(uiSource,/مقایسه عملکرد سال‌های مالی/);
  assert.match(uiSource,/بازه شمسی/);
  assert.match(uiSource,/فروش بی‌بها\/موقت/);
 });

@@ -40,5 +40,5 @@ test('phase 22 creates balanced journal entries for commercial documents and kee
   assert.match(commerce, /det-suppliers/);
   assert.match(commerce, /det-output-tax/);
   assert.match(commerce, /det-input-tax/);
-  assert.match(commerce, /فاز ۲۳/);
+  assert.match(commerce, /seedOpeningStock/);
 });

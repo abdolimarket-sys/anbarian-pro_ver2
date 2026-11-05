@@ -12,8 +12,8 @@ test('phase48 builds monthly trend from posted sales, linked inventory cost and 
 });
 test('phase48 exposes a filtered monthly trend loader',()=>assert.match(mod,/getMonthlyProfitabilityTrend\(filter:ProfitabilityFilter=\{\}\)/));
 test('phase48 renders monthly and fiscal-period comparison charts in the filtered report',()=>{
- assert.match(ui,/روند ماهانه فروش، سود و هزینه‌ها — فاز ۴۸/);
- assert.match(ui,/مقایسه نموداری سال‌های مالی — فاز ۴۸/);
+ assert.match(ui,/روند ماهانه فروش، سود و هزینه‌ها/);
+ assert.match(ui,/مقایسه نموداری سال‌های مالی/);
  assert.match(ui,/getMonthlyProfitabilityTrend\(profitabilityFilter\)/);
 });
 test('phase48 chart labels distinguish gross profit and allocated expense indicator',()=>{
