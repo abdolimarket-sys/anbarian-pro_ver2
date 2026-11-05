@@ -60,7 +60,27 @@ function render(): void {
   const root = el<HTMLDivElement>('#accountingWorkspace'); if (!root || !data) return;
   root.innerHTML = `
     <nav class="accounting-shortcuts" aria-label="بخش‌های حسابداری">${accountingTabs.map(t=>`<button type="button" class="accounting-shortcut" data-acc-tab="${t.id}" aria-pressed="false"><span class="accounting-shortcut-icon" aria-hidden="true">${t.icon}</span><span>${t.label}</span></button>`).join('')}</nav>
-    <section class="acc-section" data-acc-section="overview"><div class="stats-grid"><div class="stat-card"><span>تعداد حساب‌ها</span><strong>${fa(data.accounts.length)}</strong></div><div class="stat-card"><span>سال‌های مالی</span><strong>${fa(data.fiscalPeriods.length)}</strong></div><div class="stat-card"><span>اسناد ثبت‌شده</span><strong>${fa(data.journalEntries.length)}</strong></div></div><p class="hint accounting-overview-hint">برای ورود به هر بخش، یکی از میانبرهای بالا را انتخاب کنید.</p></section>
+    <section class="acc-section" data-acc-section="overview">
+      <div class="accounting-home-grid" aria-label="دسته‌بندی عملیات حسابداری">
+        <button type="button" class="accounting-home-tile" data-acc-menu="people"><span class="accounting-home-icon people">👥</span><span>صورت‌حساب اشخاص</span></button>
+        <button type="button" class="accounting-home-tile" data-acc-menu="party"><span class="accounting-home-icon party">👤＋</span><span>تعریف شخص</span></button>
+        <button type="button" class="accounting-home-tile" data-acc-menu="inventory"><span class="accounting-home-icon inventory">🏢</span><span>انبار</span></button>
+        <button type="button" class="accounting-home-tile" data-acc-menu="invoice"><span class="accounting-home-icon invoice">🧺</span><span>فاکتور</span></button>
+        <button type="button" class="accounting-home-tile" data-acc-menu="receipt"><span class="accounting-home-icon receipt">▣</span><span>دریافت وجه</span></button>
+        <button type="button" class="accounting-home-tile" data-acc-menu="payment"><span class="accounting-home-icon payment">▣</span><span>پرداخت وجه</span></button>
+        <button type="button" class="accounting-home-tile" data-acc-menu="other"><span class="accounting-home-icon other">◉</span><span>عملیات دیگر</span></button>
+        <button type="button" class="accounting-home-tile" data-acc-menu="messages"><span class="accounting-home-icon messages">☎</span><span>گردش طرف حساب‌ها</span></button>
+        <button type="button" class="accounting-home-tile" data-acc-menu="expense"><span class="accounting-home-icon expense">↘</span><span>صدور هزینه</span></button>
+        <button type="button" class="accounting-home-tile" data-acc-menu="income"><span class="accounting-home-icon income">↗</span><span>صدور درآمد</span></button>
+        <button type="button" class="accounting-home-tile" data-acc-menu="reports"><span class="accounting-home-icon reports">▥</span><span>گزارش‌های مالی</span></button>
+        <button type="button" class="accounting-home-tile" data-acc-menu="journals"><span class="accounting-home-icon journals">▤</span><span>اسناد حسابداری</span></button>
+        <button type="button" class="accounting-home-tile" data-acc-menu="accounts"><span class="accounting-home-icon accounts">▦</span><span>کدینگ حساب‌ها</span></button>
+        <button type="button" class="accounting-home-tile" data-acc-menu="fiscal"><span class="accounting-home-icon fiscal">▣</span><span>سال مالی</span></button>
+        <button type="button" class="accounting-home-tile" data-acc-menu="banking"><span class="accounting-home-icon banking">🏦</span><span>بانک و صندوق</span></button>
+        <button type="button" class="accounting-home-tile" data-acc-menu="cheques"><span class="accounting-home-icon cheques">💳</span><span>مدیریت چک‌ها</span></button>
+      </div>
+      <div class="stats-grid accounting-home-stats"><div class="stat-card"><span>تعداد حساب‌ها</span><strong>${fa(data.accounts.length)}</strong></div><div class="stat-card"><span>سال‌های مالی</span><strong>${fa(data.fiscalPeriods.length)}</strong></div><div class="stat-card"><span>اسناد ثبت‌شده</span><strong>${fa(data.journalEntries.length)}</strong></div></div>
+    </section>
     <section class="acc-section" data-acc-section="settings"><div class="card accounting-inner-card"><h3>تنظیمات حسابداری</h3><label class="field">واحد نمایش مبالغ<select id="accCurrency"><option value="toman" ${data.settings.currencyDisplay==='toman'?'selected':''}>تومان</option><option value="rial" ${data.settings.currencyDisplay==='rial'?'selected':''}>ریال</option></select></label><button class="btn btn-primary" id="accSaveCurrency">ذخیره تنظیمات</button><p class="hint">مبالغ همیشه به ریال ذخیره می‌شوند؛ این گزینه فقط نحوه نمایش را تغییر می‌دهد.</p></div>
     </section><section class="acc-section" data-acc-section="accounts"><div class="card accounting-inner-card"><h3>کدینگ حساب‌ها</h3><div class="form-grid"><label class="field">کد حساب<input id="accCode" placeholder="مثلاً 110103"></label><label class="field">عنوان حساب<input id="accTitle" placeholder="عنوان حساب"></label><label class="field">سطح حساب<select id="accLevel"><option value="group">گروه</option><option value="general">کل</option><option value="subsidiary">معین</option><option value="detail">تفصیلی</option></select></label><label class="field">حساب والد<select id="accParent"><option value="">بدون والد</option>${accountOptions()}</select></label><label class="field">ماهیت<select id="accNature"><option value="debit">بدهکار</option><option value="credit">بستانکار</option></select></label></div><div class="actions"><button class="btn btn-primary" id="accAddAccount">افزودن حساب</button><button class="btn btn-secondary" id="accCancelEdit" hidden>لغو ویرایش</button></div><input type="hidden" id="accEditId">${renderAccounts()}</div>
     </section><section class="acc-section" data-acc-section="fiscal"><div class="card accounting-inner-card"><h3>سال مالی شمسی</h3><div class="form-grid"><label class="field">عنوان<input id="fyTitle" placeholder="مثلاً سال مالی ۱۴۰۵"></label><label class="field">تاریخ شروع<input id="fyStart" placeholder="۱۴۰۵/۰۱/۰۱"></label><label class="field">تاریخ پایان<input id="fyEnd" placeholder="۱۴۰۵/۱۲/۲۹"></label></div><button class="btn btn-primary" id="fyCreate">ایجاد سال مالی</button>${renderPeriods()}</div>
@@ -71,6 +91,17 @@ function render(): void {
 async function persist(next: AccountingData): Promise<void> { data = next; await saveAccountingData(next); render(); window.dispatchEvent(new Event('accounting:data-updated')); }
 function bind(): void {
   document.querySelectorAll<HTMLButtonElement>('[data-acc-tab]').forEach(button => button.addEventListener('click',()=>{activeAccountingTab=button.dataset.accTab||'overview';applyAccountingTab()}));
+  document.querySelectorAll<HTMLButtonElement>('[data-acc-menu]').forEach(button => button.addEventListener('click',()=>{
+    const action=button.dataset.accMenu||'';
+    const commerceActions:Record<string,string>={people:'aging',party:'sale',inventory:'inventory',invoice:'sale',receipt:'receipts',payment:'receipts',other:'management',messages:'aging',banking:'banking',cheques:'cheques'};
+    const tab=action==='reports'?'reports':(['journals','expense','income'].includes(action)?'journals':action==='accounts'?'accounts':action==='fiscal'?'fiscal':commerceActions[action]?'commerce':'overview');
+    activeAccountingTab=tab;applyAccountingTab();
+    if(tab==='commerce'){
+      const target=commerceActions[action];
+      const openTarget=()=>{const btn=el<HTMLButtonElement>(`#accountingCommerceWorkspace [data-commerce-tab="${target}"]`);if(btn)btn.click();if(action==='party'){const panel=el<HTMLDetailsElement>('#accountingCommerceWorkspace .commerce-parties-panel');if(panel)panel.open=true;}if(action==='payment'){const type=el<HTMLSelectElement>('#accountingCommerceWorkspace #cashType');if(type)type.value='payment';}};
+      openTarget();requestAnimationFrame(openTarget);
+    }
+  }));
   el<HTMLButtonElement>('#accSaveCurrency')?.addEventListener('click', async()=>{if(!data)return;data.settings.currencyDisplay=el<HTMLSelectElement>('#accCurrency')!.value as 'rial'|'toman';await persist(data);toast('تنظیم واحد پول ذخیره شد','success')});
   const level=el<HTMLSelectElement>('#accLevel')!; const parent=el<HTMLSelectElement>('#accParent')!;
   level.addEventListener('change',()=>{const lv=level.value as AccountLevel;const parentLevel: Record<string,AccountLevel|undefined>={group:undefined,general:'group',subsidiary:'general',detail:'subsidiary'};const opts=(data?.accounts||[]).filter(a=>a.level===parentLevel[lv]&&a.isActive);parent.innerHTML='<option value="">'+(lv==='group'?'بدون والد':'انتخاب والد')+'</option>'+opts.map(a=>`<option value="${a.id}">${esc(a.code)} — ${esc(a.title)}</option>`).join('')});

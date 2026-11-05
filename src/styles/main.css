@@ -909,3 +909,73 @@ details[open] > .category-summary .category-chevron { transform: rotate(180deg);
 .jalali-calendar-native{width:38px!important;min-width:38px;height:36px;padding:4px!important;border:1px solid var(--border-color,#cbd5e1)!important;border-radius:8px;background:var(--card-bg,#fff);cursor:pointer;color:transparent;font-size:0;}
 .jalali-calendar-native::-webkit-calendar-picker-indicator{cursor:pointer;opacity:.9;margin:0;width:20px;height:20px;}
 .jalali-calendar-native:focus{outline:2px solid var(--primary,#2563eb);outline-offset:1px;}
+
+/* فرم ساده و جمع‌وجور فاکتور، نزدیک به الگوی موبایلی درخواستی */
+#accountingCommerceWorkspace .commerce-invoice-card{max-width:920px;margin-inline:auto;padding:clamp(12px,2.5vw,22px)}
+#accountingCommerceWorkspace .commerce-invoice-card>.form-grid:first-of-type{display:grid;grid-template-columns:1fr;gap:8px;margin:10px 0 16px}
+#accountingCommerceWorkspace .commerce-invoice-card>.form-grid:first-of-type>.field{display:grid;grid-template-columns:minmax(105px,28%) minmax(0,1fr);align-items:center;gap:10px;border-bottom:1px solid var(--border-color,#888);padding:8px 0;margin:0}
+#accountingCommerceWorkspace .commerce-invoice-card>.form-grid:first-of-type input:not([type=hidden]),#accountingCommerceWorkspace .commerce-invoice-card>.form-grid:first-of-type select{border:0;border-bottom:1px solid var(--border-color,#888);border-radius:0;background:transparent;min-height:42px;box-shadow:none}
+#accountingCommerceWorkspace .commerce-invoice-card>.card{box-shadow:none}
+#accountingCommerceWorkspace #invoiceOpenItems,#accountingCommerceWorkspace #invoiceSettle{min-width:118px;min-height:42px}
+#accountingCommerceWorkspace .commerce-invoice-card>details>summary{cursor:pointer;padding:12px;border-bottom:1px solid var(--border-color,#ddd);font-weight:600}
+#accountingCommerceWorkspace .commerce-invoice-summary{margin:14px 0;padding:12px;border:1px solid var(--border-color,#ddd);border-radius:10px}
+@media(max-width:560px){#accountingCommerceWorkspace .commerce-invoice-card>.form-grid:first-of-type>.field{grid-template-columns:110px minmax(0,1fr)}#accountingCommerceWorkspace .commerce-invoice-card{padding:10px}}
+
+/* Accounting home: spacious two-column icon menu inspired by the supplied mobile reference. */
+.accounting-home-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 10px;
+  padding: 8px 2px 14px;
+  direction: rtl;
+}
+.accounting-home-tile {
+  min-width: 0;
+  min-height: 116px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 7px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: .96rem;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, transform .15s ease;
+}
+.accounting-home-tile:hover, .accounting-home-tile:focus-visible {
+  background: var(--surface-muted, #f7f8fa);
+  border-color: var(--border);
+  outline: none;
+}
+.accounting-home-tile:active { transform: scale(.98); }
+.accounting-home-icon {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border-radius: 15px;
+  font-size: 2.15rem;
+  line-height: 1;
+  font-weight: 800;
+  color: var(--primary);
+}
+.accounting-home-icon.people,.accounting-home-icon.income { color: #2f9f59; }
+.accounting-home-icon.party,.accounting-home-icon.reports { color: #efa52b; }
+.accounting-home-icon.inventory,.accounting-home-icon.banking { color: #607d8b; }
+.accounting-home-icon.invoice,.accounting-home-icon.accounts { color: #455a64; }
+.accounting-home-icon.receipt,.accounting-home-icon.cheques { color: #229653; }
+.accounting-home-icon.payment,.accounting-home-icon.expense { color: #c43b35; }
+.accounting-home-icon.other,.accounting-home-icon.messages { color: #e5a02c; }
+.accounting-home-icon.journals,.accounting-home-icon.fiscal { color: #258b4d; }
+.accounting-home-stats { margin-top: 8px; padding-top: 12px; border-top: 1px solid var(--border); }
+@media (min-width: 720px) {
+  .accounting-home-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .accounting-home-tile { min-height: 128px; font-size: 1rem; }
+}
