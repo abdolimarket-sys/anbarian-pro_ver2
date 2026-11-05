@@ -1,7 +1,7 @@
 {
   "name": "anbarin-app",
   "private": true,
-  "version": "1.5.9",
+  "version": "1.5.16",
   "type": "module",
   "scripts": {
     "dev": "vite",
