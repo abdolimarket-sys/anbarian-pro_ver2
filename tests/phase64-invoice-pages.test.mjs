@@ -7,7 +7,7 @@ test('phase 64 gives sales, purchase and receipts separate page navigation',()=>
   assert.match(ui,/data-commerce-tab="sale"/);
   assert.match(ui,/data-commerce-tab="purchase"/);
   assert.match(ui,/data-commerce-tab="receipts"/);
-  assert.match(ui,/invoiceRows\(activeCommerceSection==='sale'\?'sale':'purchase'\)/);
+  assert.match(ui,/invoiceRows\(activeInvoiceType\)/);
 });
 test('phase 64 removes fiscal year selection from invoices and derives period from invoice date',()=>{
   assert.doesNotMatch(ui,/id="invoicePeriod"/);
@@ -16,7 +16,7 @@ test('phase 64 removes fiscal year selection from invoices and derives period fr
   assert.match(ui,/status==='open'&&date>=p.startDate&&date<=p.endDate/);
 });
 test('phase 64 keeps separate purchase and sales party selection and adds responsive page styling',()=>{
-  assert.match(ui,/partyOptions\(activeCommerceSection==='sale'\?'customer':'supplier'\)/);
+  assert.match(ui,/partyOptions\(isSaleInvoiceType\(activeInvoiceType\)\?'customer':'supplier'\)/);
   assert.match(css,/commerce-page-header/);
   assert.match(css,/commerce-section-nav/);
 });

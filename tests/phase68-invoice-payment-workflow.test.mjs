@@ -19,7 +19,8 @@ test('phase68 caps payment sum and explicitly turns the residual into credit bal
  assert.match(commerce,/برای مانده اعتباری\/مدت‌دار، تاریخ سررسید/);
 });
 test('phase68 posts cash/card/cheque as invoice allocations but leaves credit as outstanding balance',()=>{
- assert.match(ui,/parts\.filter\(x=>x\.method!=='credit'\)/);
+ assert.match(ui,/const realParts=read\(\)\.filter\(x=>x\.method!=='credit'\)/);
+ assert.match(ui,/method:'credit' as const,amountRial:creditAmount/);
  assert.match(ui,/allocations:\[\{invoiceId:target\.id,amountRial:part\.amountRial\}\]/);
  assert.match(commerce,/chequeAccount:\(input\.chequeAccount\|\|'\'\)\.trim\(\)/);
 });

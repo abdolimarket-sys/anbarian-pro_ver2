@@ -7,11 +7,9 @@ const commerce = readFileSync(new URL('../src/modules/accounting-commerce.ts', i
 const css = readFileSync(new URL('../src/styles/main.css', import.meta.url), 'utf8');
 const scanner = readFileSync(new URL('../src/modules/scanner.ts', import.meta.url), 'utf8');
 
-test('phase 29 invoice form captures issuer, counterparty, dates and payment terms', () => {
-  for (const marker of ['sellerName', 'sellerNationalId', 'sellerEconomicCode', 'sellerRegistration', 'sellerPhone', 'sellerPostalCode', 'sellerAddress', 'partyEconomicCode', 'partyRegistration', 'partyPostalCode', 'invoiceDueDate', 'invoicePaymentTerms', 'invoiceNotes', 'invoiceTaxRate']) {
-    assert.ok(ui.includes(marker), `missing ${marker}`);
-  }
-  assert.match(commerce, /companyProfile\?/);
+test('invoice form uses the signed-in account as issuer and captures counterparty, dates and payment terms', () => {
+  for (const marker of ['partyEconomicCode', 'partyRegistration', 'partyPostalCode', 'invoiceDueDate', 'invoicePaymentTerms', 'invoiceNotes', 'invoiceTaxRate']) assert.ok(ui.includes(marker), `missing ${marker}`);
+  for (const marker of ['sellerName', 'sellerNationalId', 'sellerEconomicCode', 'sellerRegistration', 'sellerPhone', 'sellerPostalCode', 'sellerAddress', 'sellerProfileSave', 'مشخصات صادرکننده فاکتور']) assert.ok(!ui.includes(marker), `unexpected issuer field ${marker}`);
   assert.match(commerce, /economicCode\?: string/);
 });
 

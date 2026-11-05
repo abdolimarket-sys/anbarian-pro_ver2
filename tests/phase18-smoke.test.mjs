@@ -12,7 +12,7 @@ test('release versions stay synchronized', () => {
   assert.equal(pkg.version, lock.version);
   assert.equal(pkg.version, lock.packages?.['']?.version);
   assert.ok(gradle.includes(`versionName "${pkg.version}"`));
-  assert.match(gradle, /versionCode\s+19\b/);
+  assert.match(gradle, /versionCode\s+27\b/);
   assert.match(gradle, /applicationId\s+"com\.anbarian\.app"/);
 });
 
