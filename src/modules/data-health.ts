@@ -1,4 +1,4 @@
-/** مرکز سلامت داده‌ها — فاز ۶۱؛ تمام بررسی‌ها فقط‌خواندنی هستند. */
+/** مرکز سلامت داده‌ها؛ تمام بررسی‌ها فقط‌خواندنی هستند. */
 import { products, auditLog, verifyAuditIntegrity, storageBackend } from './state';
 import { idbGet } from './storage';
 import { loadAccountingData } from './accounting';

@@ -1,4 +1,4 @@
-/** ثبت نتیجه ارائه چک نزد دارنده نهایی و گزارش وضعیت — فاز ۴۰ */
+/** ثبت نتیجه ارائه چک نزد دارنده نهایی و گزارش وضعیت */
 import { idbGet, idbPut } from './storage';
 import { loadCommerceData, type CommerceData } from './accounting-commerce';
 import { loadChequeChain, getChainAvailable } from './accounting-cheque-chain';

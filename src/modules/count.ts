@@ -2,7 +2,7 @@
  * ماژول شمارش
  * - ثبت / ویرایش countedQty و countedQty2
  * - Undo
- * - Double-count (فاز ۱ و ۲)
+ * - Double-count (شمارش اول و دوم)
  * - مودال تأیید تعداد
  * - اتصال به نتیجه اسکنر
  */
@@ -200,7 +200,7 @@ export function undoLast(): boolean {
     if (p) {
       p.countedQty2 = u.prev;
       logAudit('undo', { name: p.name, restored: u.prev, phase: 2 });
-      toast('برگشت فاز۲: ' + p.name, 'success');
+      toast('بازگشت شمارش دوم: ' + p.name, 'success');
     }
   } else if (u.type === 'bulk' && u.items) {
     u.items.forEach((it) => {

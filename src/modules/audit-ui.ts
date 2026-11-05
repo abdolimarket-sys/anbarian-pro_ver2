@@ -12,7 +12,7 @@ import { guardPermission } from './filters-roles';
 function actionLabel(action: string): string {
   const map: Record<string, string> = {
     count: 'شمارش',
-    count2: 'شمارش فاز ۲',
+    count2: 'شمارش دوم',
     undo: 'برگشت',
     import: 'ورود کالا',
     import_json: 'ورود JSON',

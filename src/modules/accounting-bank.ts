@@ -1,4 +1,4 @@
-/** مدیریت حساب‌های نقد و بانک، انتقال داخلی و مغایرت‌گیری صورت‌حساب — فاز ۳۵ */
+/** مدیریت حساب‌های نقد و بانک، انتقال داخلی و مغایرت‌گیری صورت‌حساب */
 import { idbGet, idbPut } from './storage';
 import { loadAccountingData, saveAccountingData, upsertJournalEntry, postJournalEntry, type AccountingData, type JournalEntry, type JournalLine } from './accounting';
 import { logAudit } from './state';

@@ -1,4 +1,4 @@
-/** دفتر چک‌ها، سررسید، واگذاری به بانک و سوابق تغییرات — فاز ۳۶ */
+/** دفتر چک‌ها، سررسید، واگذاری به بانک و سوابق تغییرات */
 import { idbGet, idbPut } from './storage';
 import { loadCommerceData, saveCommerceData, type CashTransaction } from './accounting-commerce';
 import { logAudit } from './state';

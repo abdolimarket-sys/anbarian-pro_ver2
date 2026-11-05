@@ -156,18 +156,18 @@ export function updatePhaseButtons(): void {
 
 export function actionSetPhase(phase: 1 | 2): void {
   if (!isDoubleCount()) {
-    toast('شمارش دوفازی خاموش است', 'info');
+    toast('شمارش دومرحله‌ای خاموش است', 'info');
     return;
   }
   setCountPhase(phase);
   updatePhaseButtons();
-  toast(phase === 1 ? 'فاز ۱ فعال شد' : 'فاز ۲ فعال شد', 'success');
+  toast(phase === 1 ? 'شمارش اول فعال شد' : 'شمارش دوم فعال شد', 'success');
 }
 
 export function getSettingsSummary(): string {
   const parts = [
     settings.role,
-    settings.doubleCount ? 'دوفازی' : null,
+    settings.doubleCount ? 'دومرحله‌ای' : null,
     settings.blindCount ? 'کور' : null,
     settings.currentWarehouse,
   ].filter(Boolean);

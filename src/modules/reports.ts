@@ -91,12 +91,12 @@ export function buildTextReport(): string {
     const review = computeDoubleCountReview(list);
     lines.push(
       '────────────────',
-      'بازبینی شمارش دوفازی',
-      `تکمیل فاز ۱: ${review.phase1Count}`,
-      `تکمیل فاز ۲: ${review.phase2Count}`,
-      `هر دو فاز تکمیل: ${review.bothCount}`,
+      'بازبینی شمارش دومرحله‌ای',
+      `تکمیل شمارش اول: ${review.phase1Count}`,
+      `تکمیل شمارش دوم: ${review.phase2Count}`,
+      `هر دو شمارش تکمیل: ${review.bothCount}`,
       `نیازمند بازبینی: ${review.reviewCount}`,
-      `اختلاف دو فاز: ${review.mismatchCount}`,
+      `اختلاف دو شمارش: ${review.mismatchCount}`,
     );
   }
   return lines.join('\n');
@@ -113,8 +113,8 @@ export function exportFullExcel(): void {
 /** خروجی مستقل کالاهای شمارش‌شده؛ فقط خواندن داده‌ها و بدون تغییر موجودی/شمارش. */
 export function exportCountedProductsExcel(): void {
   const doubleCount = isDoubleCount();
-  // در شمارش دوفازی، وجود حداقل یک مقدار ثبت‌شده در هر یک از دو فاز
-  // به معنی شمارش‌شدن کالا است؛ مقدار نهایی نمایشی، فاز ۲ و در نبود آن فاز ۱ است.
+  // در شمارش دومرحله‌ای، وجود حداقل یک مقدار ثبت‌شده در هر یک از دو مرحله
+  // به معنی شمارش‌شدن کالا است؛ مقدار نهایی نمایشی، شمارش دوم و در نبود آن شمارش اول است.
   const list = activeList().filter((p) =>
     doubleCount ? p.countedQty != null || p.countedQty2 != null : p.countedQty != null
   );
@@ -358,7 +358,7 @@ export function computeDoubleCountReview(list: Product[] = activeList()): Double
 
 export function exportDoubleCountMismatches(): void {
   if (!isDoubleCount()) {
-    toast('شمارش دوفازی فعال نیست', 'info');
+    toast('شمارش دومرحله‌ای فعال نیست', 'info');
     return;
   }
   // Export incomplete items as well as unequal counts so an unfinished phase
@@ -367,7 +367,7 @@ export function exportDoubleCountMismatches(): void {
     p.countedQty == null || p.countedQty2 == null || p.countedQty !== p.countedQty2
   );
   if (!list.length) {
-    toast('همه کالاها در هر دو فاز شمارش شده و برابر هستند', 'info');
+    toast('همه کالاها در هر دو مرحله شمارش شده و برابر هستند', 'info');
     return;
   }
   const rows = list.map((p) => {
@@ -379,7 +379,7 @@ export function exportDoubleCountMismatches(): void {
       'شمارش ۱': has1 ? p.countedQty : '',
       'شمارش ۲': has2 ? p.countedQty2 : '',
       اختلاف: has1 && has2 ? (p.countedQty2 as number) - (p.countedQty as number) : '',
-      وضعیت: !has1 && !has2 ? 'هیچ‌کدام شمارش نشده' : !has1 ? 'فاز ۱ ناقص' : !has2 ? 'فاز ۲ ناقص' : 'اختلاف دو فاز',
+      وضعیت: !has1 && !has2 ? 'هیچ‌کدام شمارش نشده' : !has1 ? 'شمارش اول ناقص' : !has2 ? 'شمارش دوم ناقص' : 'اختلاف دو شمارش',
       سیستم: p.systemQty,
       محل: p.location || '',
     };
@@ -695,7 +695,7 @@ export function getProductCardex(productId: string): CardexRow[] {
       const delta = prev !== null && next !== null ? next - prev : '';
       return {
         date: entry.ts ? new Date(entry.ts).toLocaleString('fa-IR') : '—',
-        action: entry.action === 'count2' ? `شمارش فاز ${phase}` : entry.action === 'undo' ? 'بازگردانی' : 'شمارش فاز ۱',
+        action: entry.action === 'count2' ? `شمارش ${phase === 1 ? 'اول' : 'دوم'}` : entry.action === 'undo' ? 'بازگردانی' : 'شمارش اول',
         reference: String(d.id || ''), before: prev ?? 'نامشخص', change: delta,
         after: next ?? 'نامشخص', operator: entry.operator || '—', note: 'ثبت‌شده در سوابق فعالیت',
       };

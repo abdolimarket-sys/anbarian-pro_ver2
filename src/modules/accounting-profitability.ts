@@ -1,4 +1,4 @@
-/** تحلیل حاشیه سود بر پایه بهای تمام‌شده ثبت‌شده در گردش انبار — فاز ۴۳ (فقط‌خواندنی). */
+/** تحلیل حاشیه سود بر پایه بهای تمام‌شده ثبت‌شده در گردش انبار (فقط‌خواندنی). */
 import { loadCommerceData, type CommerceData } from './accounting-commerce';
 import { loadInventoryCostData, type InventoryCostData } from './inventory-costing';
 import { loadAccountingData, type AccountingData } from './accounting';

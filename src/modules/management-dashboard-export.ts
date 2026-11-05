@@ -1,4 +1,4 @@
-/** خروجی آفلاین داشبورد مدیریتی — فاز ۵۰ */
+/** خروجی آفلاین داشبورد مدیریتی */
 import { buildOfflineXlsx } from './import-export';
 import { getAgingDashboard } from './accounting-aging';
 import { getCashflowDashboard } from './accounting-cashflow';

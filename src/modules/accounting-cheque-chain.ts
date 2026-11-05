@@ -1,4 +1,4 @@
-/** دفتر گردش زنجیره‌ای ظهرنویسی چک پس از واگذاری از شرکت — فاز ۳۹ */
+/** دفتر گردش زنجیره‌ای ظهرنویسی چک پس از واگذاری از شرکت */
 import { idbGet, idbPut } from './storage';
 import { loadCommerceData, type CommerceData } from './accounting-commerce';
 import { logAudit } from './state';

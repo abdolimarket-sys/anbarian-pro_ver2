@@ -1,4 +1,4 @@
-/** داشبورد سن مطالبات، بدهی‌ها و ریسک سررسید اسناد — فاز ۴۱ */
+/** داشبورد سن مطالبات، بدهی‌ها و ریسک سررسید اسناد */
 import { loadCommerceData, invoiceOutstanding, type CommerceData, type CommercialInvoice, type CashTransaction } from './accounting-commerce';
 
 export type AgingBucket = 'current'|'1_30'|'31_60'|'61_90'|'over_90';

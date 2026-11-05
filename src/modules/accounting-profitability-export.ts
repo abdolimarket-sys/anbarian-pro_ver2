@@ -1,4 +1,4 @@
-/** خروجی آفلاین گزارش سودآوری — فاز ۴۶ */
+/** خروجی آفلاین گزارش سودآوری */
 import { buildOfflineXlsx } from './import-export';
 import { getProfitabilityDashboard, getExpenseAdjustedProfitability, getProfitabilityPeriodComparison, type ProfitabilityFilter } from './accounting-profitability';
 

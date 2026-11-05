@@ -1,4 +1,4 @@
-/** پیش‌بینی جریان نقد و رفتار پرداخت طرف‌حساب‌ها — فاز ۴۲ (گزارش فقط‌خواندنی) */
+/** پیش‌بینی جریان نقد و رفتار پرداخت طرف‌حساب‌ها (گزارش فقط‌خواندنی) */
 import { loadCommerceData, invoiceOutstanding, type CommerceData } from './accounting-commerce';
 export interface ForecastRow { date:string; inflowRial:number; outflowRial:number; source:'invoice'|'cheque'; reference:string; partyName:string; }
 export interface PartyPaymentScore { partyId:string; partyName:string; role:'customer'|'supplier'; invoicedRial:number; allocatedRial:number; outstandingRial:number; collectionPercent:number; }

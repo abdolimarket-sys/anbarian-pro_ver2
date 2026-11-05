@@ -1,4 +1,4 @@
-/** رابط کاربری حسابداری — فاز ۲۱ */
+/** رابط کاربری حسابداری */
 import {
   initializeSuggestedChart, loadAccountingData, saveAccountingData,
   upsertAccount, removeAccount, createFiscalPeriod, upsertJournalEntry,

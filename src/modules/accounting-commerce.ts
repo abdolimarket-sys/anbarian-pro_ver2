@@ -1,4 +1,4 @@
-/** گردش تجاری حسابداری و اتصال فاکتور به موجودی و بهای تمام‌شده — فاز ۲۳. */
+/** گردش تجاری حسابداری و اتصال فاکتور به موجودی و بهای تمام‌شده. */
 import { idbGet, idbPut } from './storage';
 import { products, save as saveAppState, flushSave, logAudit } from './state';
 import { loadInventoryCostData, saveInventoryCostData, receiveStock, issueStock, seedOpeningStock } from './inventory-costing';
@@ -18,10 +18,11 @@ export interface AccountingParty {
 export interface CommercialInvoiceLine {
   id: string; description: string; quantityMilli: number; unitPriceRial: number; totalRial: number; productId?: string; warehouse?: string; unit?: string; discountRial?: number;
 }
+export interface InvoicePaymentPart { method:'cash'|'card'|'cheque'|'credit'; amountRial:number; chequeNumber?:string; chequeBank?:string; chequeAccount?:string; chequeDueDate?:string; note?:string; }
 export interface CommercialInvoice {
   id: string; type: InvoiceType; number: string; date: string; fiscalPeriodId: string; partyId: string;
   description: string; lines: CommercialInvoiceLine[]; netRial: number; taxRial: number; grossRial: number; taxRateBps?: number;
-  dueDate?: string; paymentTerms?: string; notes?: string;
+  dueDate?: string; paymentTerms?: string; paymentParts?:InvoicePaymentPart[]; notes?: string;
   status: CommercialStatus; journalEntryId?: string; createdAt: string; updatedAt: string;
 }
 export type SettlementMethod = 'cash'|'bank'|'card'|'transfer'|'cheque';
@@ -32,7 +33,7 @@ export interface CashTransaction {
   partyId: string; cashAccountId: string; amountRial: number; description: string;
   journalEntryId: string; createdAt: string;
   method?: SettlementMethod; allocations?: InvoiceAllocation[];
-  chequeNumber?: string; chequeBank?: string; chequeDueDate?: string; chequeStatus?: ChequeStatus;
+  chequeNumber?: string; chequeBank?: string; chequeAccount?:string; chequeNote?:string; chequeDueDate?: string; chequeStatus?: ChequeStatus;
   clearingJournalEntryId?: string;
 }
 export interface ChequeEndorsement { id:string; transactionId:string; toPartyId:string; invoiceId:string; date:string; amountRial:number; note:string; journalEntryId:string; createdAt:string; }
@@ -47,7 +48,7 @@ const now = () => new Date().toISOString();
 const makeId = (p: string) => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
 const isSafeMoney = (n: number) => Number.isSafeInteger(n) && n >= 0;
 
-// فاز ۵۹: سری‌سازی عملیات حساس در یک تب برای جلوگیری از ثبت هم‌زمان تکراری.
+// سری‌سازی عملیات حساس در یک تب برای جلوگیری از ثبت هم‌زمان تکراری.
 let commerceMutationTail: Promise<void> = Promise.resolve();
 async function withCommerceMutationLock<T>(work: () => Promise<T>): Promise<T> {
   const previous = commerceMutationTail;
@@ -73,7 +74,7 @@ export async function saveCommerceData(v: CommerceData): Promise<void> {
   await idbPut(BACKUP, v); await idbPut(KEY, v);
 }
 
-/** افزودن حساب‌های سیستمی فاز ۲۲ حتی اگر کدینگ قبلاً مقداردهی شده باشد. */
+/** افزودن حساب‌های سیستمی حتی اگر کدینگ قبلاً مقداردهی شده باشد. */
 export async function ensureCommerceAccounts(): Promise<AccountingData> {
   const data = await loadAccountingData();
   const additions = [
@@ -144,7 +145,7 @@ async function persistPostedJournal(accounting: AccountingData, entry: JournalEn
 
 export function buildInvoice(input: {
   type: InvoiceType; number: string; date: string; fiscalPeriodId: string; partyId: string;
-  description: string; lines: Array<{description:string; quantityMilli:number; unitPriceRial:number; productId?:string; warehouse?:string; unit?:string; discountRial?:number}>; taxRial:number; taxRateBps?:number; dueDate?:string; paymentTerms?:string; notes?:string;
+  description: string; lines: Array<{description:string; quantityMilli:number; unitPriceRial:number; productId?:string; warehouse?:string; unit?:string; discountRial?:number}>; taxRial:number; taxRateBps?:number; dueDate?:string; paymentTerms?:string; paymentParts?:InvoicePaymentPart[]; notes?:string;
 }, parties: AccountingParty[]): CommercialInvoice {
   const party = parties.find(p=>p.id===input.partyId && p.isActive);
   if (!party || !(party.type==='both' || (input.type==='sale'?party.type==='customer':party.type==='supplier'))) throw new Error('طرف حساب فعال و متناسب با نوع فاکتور انتخاب کنید.');
@@ -171,7 +172,12 @@ export function buildInvoice(input: {
   if (input.taxRateBps !== undefined && (!Number.isSafeInteger(input.taxRateBps) || input.taxRateBps < 0 || input.taxRateBps > 10000)) throw new Error('نرخ مالیات باید بین صفر تا صد درصد باشد.');
   if (input.dueDate && !/^\d{4}\/\d{2}\/\d{2}$/.test(input.dueDate)) throw new Error('تاریخ سررسید باید به شکل سال/ماه/روز شمسی باشد.');
   if (input.dueDate && input.dueDate < input.date) throw new Error('تاریخ سررسید نمی‌تواند قبل از تاریخ فاکتور باشد.');
-  return {id:makeId('invoice'),type:input.type,number,date:input.date,fiscalPeriodId:input.fiscalPeriodId,partyId:party.id,description:input.description.trim(),lines,netRial,taxRial:input.taxRial,grossRial,taxRateBps:input.taxRateBps??0,dueDate:input.dueDate||'',paymentTerms:(input.paymentTerms||'').trim(),notes:(input.notes||'').trim(),status:'draft',createdAt:now(),updatedAt:now()};
+  const paymentParts=(input.paymentParts||[]).map(part=>{if(!['cash','card','cheque','credit'].includes(part.method)||!isSafeMoney(part.amountRial)||part.amountRial<=0)throw new Error('روش یا مبلغ یکی از بخش‌های پرداخت معتبر نیست.');if(part.method==='cheque'){if(!part.chequeNumber?.trim()||!part.chequeBank?.trim()||!part.chequeDueDate||!/^\d{4}\/\d{2}\/\d{2}$/.test(part.chequeDueDate))throw new Error('برای هر چک، مبلغ، شماره چک، بانک و تاریخ سررسید معتبر الزامی است.');if(part.chequeDueDate<input.date)throw new Error('سررسید چک نمی‌تواند قبل از تاریخ فاکتور باشد.');}return {...part};});
+  const allocatedPayments=paymentParts.reduce((sum,x)=>sum+x.amountRial,0);
+  if(allocatedPayments>grossRial)throw new Error('جمع پرداخت‌ها نباید از مبلغ نهایی فاکتور بیشتر شود.');
+  if((allocatedPayments<grossRial||paymentParts.some(x=>x.method==='credit'))&&!input.dueDate)throw new Error('برای مانده اعتباری/مدت‌دار، تاریخ سررسید را در بخش شرایط پرداخت وارد کنید.');
+  if(allocatedPayments<grossRial)paymentParts.push({method:'credit',amountRial:grossRial-allocatedPayments,note:'مانده بدهی/مطالبه فاکتور'});
+  return {id:makeId('invoice'),type:input.type,number,date:input.date,fiscalPeriodId:input.fiscalPeriodId,partyId:party.id,description:input.description.trim(),lines,netRial,taxRial:input.taxRial,grossRial,taxRateBps:input.taxRateBps??0,dueDate:input.dueDate||'',paymentTerms:(input.paymentTerms||'').trim(),paymentParts,notes:(input.notes||'').trim(),status:'draft',createdAt:now(),updatedAt:now()};
 }
 
 /** ویرایش کنترل‌شده پیش‌نویس؛ فاکتور قطعی قابل بازنویسی نیست. */
@@ -250,7 +256,7 @@ async function postInvoiceExclusive(invoiceId: string, commerce: CommerceData): 
 export async function createCashTransaction(input: {
   type:'receipt'|'payment'; number:string; date:string; fiscalPeriodId:string; partyId:string;
   cashAccountId:string; amountRial:number; description:string; method?:SettlementMethod;
-  allocations?:InvoiceAllocation[]; chequeNumber?:string; chequeBank?:string; chequeDueDate?:string;
+  allocations?:InvoiceAllocation[]; chequeNumber?:string; chequeBank?:string; chequeAccount?:string; chequeNote?:string; chequeDueDate?:string;
 }, commerce:CommerceData):Promise<{commerce:CommerceData;accounting:AccountingData}> {
   return withCommerceMutationLock(() => createCashTransactionExclusive(input, commerce));
 }
@@ -258,7 +264,7 @@ export async function createCashTransaction(input: {
 async function createCashTransactionExclusive(input: {
   type:'receipt'|'payment'; number:string; date:string; fiscalPeriodId:string; partyId:string;
   cashAccountId:string; amountRial:number; description:string; method?:SettlementMethod;
-  allocations?:InvoiceAllocation[]; chequeNumber?:string; chequeBank?:string; chequeDueDate?:string;
+  allocations?:InvoiceAllocation[]; chequeNumber?:string; chequeBank?:string; chequeAccount?:string; chequeNote?:string; chequeDueDate?:string;
 }, originalCommerce:CommerceData):Promise<{commerce:CommerceData;accounting:AccountingData}> {
   const persisted = await loadCommerceData();
   const activeCommerce = persisted.cashTransactions.length || persisted.invoices.length || persisted.parties.length ? persisted : originalCommerce;
@@ -297,7 +303,7 @@ async function createCashTransactionExclusive(input: {
     : [journalLine(partyAccount,'تسویه حساب تأمین‌کننده',input.amountRial,0,party.id),journalLine(instrumentAccount,isCheque?'چک پرداختنی':'پرداخت وجه',0,input.amountRial)];
   const id=makeId(input.type); const entry=journalBase(id,input.type==='receipt'?'R':'P',input.fiscalPeriodId,input.date,input.description||(input.type==='receipt'?'دریافت از مشتری':'پرداخت به تأمین‌کننده'),input.type,lines);
   const journalEntryId=await persistPostedJournal(accounting,entry);
-  const tx:CashTransaction={id,type:input.type,number:input.number.trim(),date:input.date,fiscalPeriodId:input.fiscalPeriodId,partyId:party.id,cashAccountId:input.cashAccountId,amountRial:input.amountRial,description:input.description.trim(),journalEntryId,createdAt:now(),method,allocations,...(isCheque?{chequeNumber:input.chequeNumber!.trim(),chequeBank:input.chequeBank!.trim(),chequeDueDate:input.chequeDueDate,chequeStatus:'pending' as const}:{})};
+  const tx:CashTransaction={id,type:input.type,number:input.number.trim(),date:input.date,fiscalPeriodId:input.fiscalPeriodId,partyId:party.id,cashAccountId:input.cashAccountId,amountRial:input.amountRial,description:input.description.trim(),journalEntryId,createdAt:now(),method,allocations,...(isCheque?{chequeNumber:input.chequeNumber!.trim(),chequeBank:input.chequeBank!.trim(),chequeAccount:(input.chequeAccount||'').trim(),chequeNote:(input.chequeNote||'').trim(),chequeDueDate:input.chequeDueDate,chequeStatus:'pending' as const}:{})};
   const next={...activeCommerce,cashTransactions:[...activeCommerce.cashTransactions,tx]}; await saveCommerceData(next);
   return {commerce:next,accounting:await loadAccountingData()};
 }

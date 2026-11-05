@@ -1,4 +1,4 @@
-/** خروجی مستقل جزئیات ماهانه داشبورد مدیریتی — فاز ۵۳ */
+/** خروجی مستقل جزئیات ماهانه داشبورد مدیریتی */
 import { loadAccountingData } from './accounting';
 import { loadCommerceData } from './accounting-commerce';
 import { buildOfflineXlsx } from './import-export';

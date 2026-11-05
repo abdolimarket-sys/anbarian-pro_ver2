@@ -1,4 +1,4 @@
-/** ظهرنویسی و واگذاری چک دریافتی به تأمین‌کننده — فاز ۳۷ */
+/** ظهرنویسی و واگذاری چک دریافتی به تأمین‌کننده */
 import { loadAccountingData, saveAccountingData, upsertJournalEntry, postJournalEntry, type JournalEntry, type JournalLine } from './accounting';
 import { loadCommerceData, saveCommerceData, invoiceOutstanding, type CommerceData, type CashTransaction } from './accounting-commerce';
 import { logAudit } from './state';

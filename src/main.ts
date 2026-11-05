@@ -1,6 +1,5 @@
 /**
  * نقطه ورود برنامه انبارین
- * فاز ۱: معماری ماژولار + اسکنر + شمارش + import/export + virtual list
  */
 
 import './styles/main.css';
@@ -19,6 +18,7 @@ import { initAccountingUI } from './modules/accounting-ui';
 import { initAccountingCommerceUI } from './modules/accounting-commerce-ui';
 import { initAccountingReportsUI } from './modules/accounting-reports';
 import { renderDataHealth } from './modules/data-health';
+import { initUnifiedDatePickers } from './modules/date-picker';
 
 // پیام نهایی ذخیره‌سازی فایل در اپ اندروید (پس از انتخاب پوشه و نوشتن موفق).
 window.addEventListener('anbarin:file-saved', (event: Event) => {
@@ -317,9 +317,6 @@ function initScannerModule() {
     isQtyModalOpen: () => isQtyModalOpen(),
     onScan: (result: ScanResult) => {
       if ((window as any).__anbarinInvoiceScanActive) {
-        (window as any).__anbarinInvoiceScanActive = false;
-        const continuous = document.getElementById('scannerContinuous') as HTMLInputElement | null;
-        if (continuous) continuous.checked = (window as any).__anbarinScannerContinuousBeforeInvoice ?? true;
         window.dispatchEvent(new CustomEvent('anbarin:invoice-barcode-scan', { detail: { code: result.code } }));
         return;
       }
@@ -349,7 +346,7 @@ function renderShell() {
         <div class="logo-area">
           <img class="brand-logo" src="./logo.png" alt="لوگوی انبارین" />
           <div class="brand-title"><strong>انبارین</strong>
-          <span class="version">v1.5.7</span>
+          <span class="version">v1.5.8</span>
           <span class="role-badge" id="roleBadge">—</span></div>
         </div>
         <div class="header-stats" id="headerStats"></div>
@@ -367,8 +364,8 @@ function renderShell() {
           <div id="statsBox" class="stats-grid"></div>
 
           <div id="phaseBar" class="phase-bar" style="display:none;margin-top:10px">
-            <button type="button" class="filter-chip" data-phase="1">فاز ۱</button>
-            <button type="button" class="filter-chip" data-phase="2">فاز ۲</button>
+            <button type="button" class="filter-chip" data-phase="1">شمارش اول</button>
+            <button type="button" class="filter-chip" data-phase="2">شمارش دوم</button>
           </div>
 
           <div class="session-bar" id="sessionBar">
@@ -466,7 +463,7 @@ function renderShell() {
                 <button class="btn btn-primary btn-block" id="btnExportAccountingTemplate" type="button">📊 خروجی اکسل با ستون‌های انتخابی</button>
               </div>
             </details>
-            <button class="btn btn-secondary btn-block" id="btnDoubleDiff">📥 اختلاف فاز ۱ و ۲</button>
+            <button class="btn btn-secondary btn-block" id="btnDoubleDiff">📥 اختلاف شمارش اول و دوم</button>
             <button class="btn btn-secondary btn-block" id="btnStockAlerts">⚠️ هشدار موجودی</button>
             <button class="btn btn-secondary btn-block" id="btnPrintLabels">🏷️ چاپ لیبل بارکد (تا ۵۰)</button>
             <button class="btn btn-primary btn-block" id="btnApplySystem">✔ اعمال شمارش روی موجودی سیستم</button>
@@ -487,7 +484,7 @@ function renderShell() {
 
       <section class="page" id="page-health">
         <div class="card">
-          <h2>مرکز سلامت داده‌ها — فاز ۶۱</h2>
+          <h2>مرکز سلامت داده‌ها</h2>
           <p class="hint">بررسی ساختار کالاها، بارکدها، اسناد حسابداری، بهای تمام‌شده، پشتیبان و زنجیره لاگ. این بخش فقط گزارش می‌دهد و اطلاعات را تغییر نمی‌دهد.</p>
           <button class="btn btn-primary" id="btnRunDataHealth" type="button">اجرای دوباره بررسی</button>
           <div id="dataHealthWorkspace" style="margin-top:12px"><p class="hint">برای شروع بررسی وارد این بخش شوید.</p></div>
@@ -515,7 +512,7 @@ function renderShell() {
             <li>انبار فعال: <code id="warehouseInfo">—</code></li>
             <li>نقش: <code id="roleInfo">—</code></li>
             <li>قابلیت اسکنر: <code id="capsInfo">—</code></li>
-            <li>شمارش دوفازی: <code id="doubleInfo">—</code></li>
+            <li>شمارش دومرحله‌ای: <code id="doubleInfo">—</code></li>
           </ul>
         </div>
         <div class="card" style="margin-top:12px">
@@ -528,7 +525,7 @@ function renderShell() {
             <label class="set-row"><span>افزایش خودکار (+۱)</span><input type="checkbox" id="setAutoInc" /></label>
             <label class="set-row"><span>شمارش کور (بدون نمایش مغایرت)</span><input type="checkbox" id="setBlind" /></label>
             <label class="set-row"><span>اسکنر USB/Bluetooth</span><input type="checkbox" id="setBt" /></label>
-            <label class="set-row"><span>شمارش دوفازی</span><input type="checkbox" id="setDouble" /></label>
+            <label class="set-row"><span>شمارش دومرحله‌ای</span><input type="checkbox" id="setDouble" /></label>
             <div class="role-settings-panel" id="roleSettingsPanel">
               <div class="role-settings-heading">
                 <div>
@@ -705,8 +702,73 @@ function renderShell() {
     </nav>
   `;
 
+
+  // دسته‌بندی جمع‌وجور تنظیمات؛ محتوای اصلی و شناسه کنترل‌ها بدون تغییر می‌مانند.
+  compactAdminSections();
+  compactReportSections();
   bindEvents();
   setupVirtualLists();
+}
+
+
+function compactAdminSections(): void {
+  const page = document.getElementById('page-admin');
+  if (!page) return;
+  const cards = Array.from(page.children).filter((node): node is HTMLElement =>
+    node instanceof HTMLElement && node.classList.contains('card')
+  );
+  const icons = ['📊', '⚙️', '🔐', '🔄', '💾'];
+  cards.forEach((card, index) => {
+    const heading = card.querySelector(':scope > h2');
+    if (!heading) return;
+    const title = heading.textContent?.trim() || 'بخش تنظیمات';
+    const details = document.createElement('details');
+    details.className = 'settings-category';
+    details.open = index === 0;
+    const summary = document.createElement('summary');
+    summary.className = 'category-summary';
+    summary.innerHTML = `<span class="category-icon" aria-hidden="true">${icons[index] || '🧩'}</span><span class="category-title"></span><span class="category-chevron" aria-hidden="true">⌄</span>`;
+    summary.querySelector('.category-title')!.textContent = title;
+    const body = document.createElement('div');
+    body.className = 'category-content';
+    Array.from(card.childNodes).forEach((child) => {
+      if (child === heading) return;
+      body.appendChild(child);
+    });
+    details.append(summary, body);
+    card.replaceWith(details);
+  });
+}
+
+function compactReportSections(): void {
+  const page = document.getElementById('page-reports');
+  const card = page?.querySelector(':scope > .card');
+  if (!card) return;
+  // اسناد و کاردکس از قبل مستقل و باز/بسته‌شونده‌اند؛ عنوان‌هایشان را یکدست می‌کنیم.
+  card.querySelectorAll(':scope > details > summary').forEach((summary) => {
+    summary.classList.add('category-summary');
+  });
+  const dashboard = card.querySelector('#managementDashboard');
+  const summary = card.querySelector('#reportSummary');
+  const alerts = card.querySelector('#stockAlertsPanel');
+  const movement = card.querySelector('#inventoryMovementPanel');
+  const history = card.querySelector('#activityHistoryPanel');
+  const nodes = [dashboard, summary, alerts, movement, history].filter((n): n is HTMLElement => n instanceof HTMLElement);
+  if (nodes.some((n) => n.childElementCount > 0 || (n.textContent || '').trim())) {
+    const details = document.createElement('details');
+    details.className = 'report-category';
+    details.open = true;
+    const heading = document.createElement('summary');
+    heading.className = 'category-summary';
+    heading.innerHTML = '<span class="category-icon" aria-hidden="true">📈</span><span class="category-title">داشبورد و گزارش‌های تحلیلی</span><span class="category-chevron" aria-hidden="true">⌄</span>';
+    const body = document.createElement('div');
+    body.className = 'category-content';
+    nodes.forEach((node) => body.appendChild(node));
+    details.append(heading, body);
+    const first = nodes[0];
+    if (first?.parentElement) first.before(details);
+    else card.appendChild(details);
+  }
 }
 
 function bindEvents() {
@@ -1268,4 +1330,5 @@ function updateCapsInfo() {
   el.textContent = parts.join(' + ') || 'فقط دستی';
 }
 
+initUnifiedDatePickers();
 bootApp();

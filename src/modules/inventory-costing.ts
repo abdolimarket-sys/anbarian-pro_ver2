@@ -1,4 +1,4 @@
-/** موتور بهای تمام‌شده و اتصال گردش فاکتور به موجودی — فاز ۲۳ */
+/** موتور بهای تمام‌شده و اتصال گردش فاکتور به موجودی */
 import { idbGet, idbPut } from './storage';
 import type { AccountingSettings } from './accounting';
 
