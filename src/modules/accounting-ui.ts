@@ -58,45 +58,8 @@ function renderJournals(): string {
 }
 function renderJournalLineEditor(count: number): string {
   if (!data) return '';
-
   const opts = accountOptions('detail');
-  const currencyDisplay = data.settings.currencyDisplay;
-  const currencyLabel = currencyDisplay === 'toman' ? 'تومان' : 'ریال';
-
-  return Array.from({ length: count }, (_, i) =>
-    `<div class="accounting-voucher-line" data-je-line="${i}">
-      <label class="field">
-        حساب
-        <select data-je-account>
-          <option value="">انتخاب حساب</option>
-          ${opts}
-        </select>
-      </label>
-
-      <label class="field">
-        شرح ردیف
-        <input data-je-description placeholder="شرح آرتیکل">
-      </label>
-
-      <label class="field">
-        بدهکار (<span>${currencyLabel}</span>)
-        <input data-je-debit inputmode="decimal" placeholder="۰">
-      </label>
-
-      <label class="field">
-        بستانکار (<span>${currencyLabel}</span>)
-        <input data-je-credit inputmode="decimal" placeholder="۰">
-      </label>
-
-      <button
-        type="button"
-        class="btn btn-sm btn-secondary"
-        data-je-remove
-        aria-label="حذف ردیف"
-        ${i < 2 ? 'disabled' : ''}
-      >حذف</button>
-    </div>`
-  ).join('');
+  return Array.from({length: count}, (_, i) => `<div class="accounting-voucher-line" data-je-line="${i}"><label class="field">حساب<select data-je-account><option value="">انتخاب حساب</option>${opts}</select></label><label class="field">شرح ردیف<input data-je-description placeholder="شرح آرتیکل"></label><label class="field">بدهکار (<span>${data.settings.currencyDisplay==='toman'?'تومان':'ریال'}</span>)<input data-je-debit inputmode="decimal" placeholder="۰"></label><label class="field">بستانکار (<span>${data.settings.currencyDisplay==='toman'?'تومان':'ریال'}</span>)<input data-je-credit inputmode="decimal" placeholder="۰"></label><button type="button" class="btn btn-sm btn-secondary" data-je-remove aria-label="حذف ردیف" ${i<2?'disabled':''}>حذف</button></div>`).join('');
 }
 function updateJournalTotals(): void {
   if (!data) return;

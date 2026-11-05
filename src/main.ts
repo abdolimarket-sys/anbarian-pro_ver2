@@ -313,7 +313,7 @@ function initScannerModule() {
   initScanner({
     containerId: 'scanner-container',
     getSettings: () => settings,
-    canScan: () => canCount(),
+    canScan: () => !!(window as any).__anbarinInvoiceScanActive || canCount(),
     isQtyModalOpen: () => isQtyModalOpen(),
     onScan: (result: ScanResult) => {
       if ((window as any).__anbarinInvoiceScanActive) {
