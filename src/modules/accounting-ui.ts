@@ -77,6 +77,7 @@ function updateJournalTotals(): void {
 }
 function render(): void {
   const root = el<HTMLDivElement>('#accountingWorkspace'); if (!root || !data) return;
+  const acc = data;
   root.setAttribute('dir','rtl');
   root.innerHTML = `
     <nav class="accounting-shortcuts" aria-label="بخش‌های حسابداری">${accountingTabs.map(t=>`<button type="button" class="accounting-shortcut" data-acc-tab="${t.id}" aria-pressed="false"><span class="accounting-shortcut-icon" aria-hidden="true">${t.icon}</span><span>${t.label}</span></button>`).join('')}</nav>
@@ -91,10 +92,10 @@ function render(): void {
 </div>
 <p class="hint" id="accBackupStatus" style="margin-top:12px"></p>
 </div></section>
-<section class="acc-section" data-acc-section="settings"><div class="card accounting-inner-card"><h3>تنظیمات</h3><label class="field">واحد نمایش مبالغ<select id="accCurrency"><option value="toman" ${data.settings.currencyDisplay==='toman'?'selected':''}>تومان</option><option value="rial" ${data.settings.currencyDisplay==='rial'?'selected':''}>ریال</option></select></label><button class="btn btn-primary" id="accSaveCurrency">ذخیره تنظیمات</button></div>
+<section class="acc-section" data-acc-section="settings"><div class="card accounting-inner-card"><h3>تنظیمات</h3><label class="field">واحد نمایش مبالغ<select id="accCurrency"><option value="toman" ${acc.settings.currencyDisplay==='toman'?'selected':''}>تومان</option><option value="rial" ${acc.settings.currencyDisplay==='rial'?'selected':''}>ریال</option></select></label><button class="btn btn-primary" id="accSaveCurrency">ذخیره تنظیمات</button></div>
     </section><section class="acc-section" data-acc-section="accounts"><div class="card accounting-inner-card"><h3>کدینگ</h3><div class="form-grid"><label class="field">کد حساب<input id="accCode" placeholder="مثلاً 110103"></label><label class="field">عنوان حساب<input id="accTitle" placeholder="عنوان حساب"></label><label class="field">سطح حساب<select id="accLevel"><option value="group">گروه</option><option value="general">کل</option><option value="subsidiary">معین</option><option value="detail">تفصیلی</option></select></label><label class="field">حساب والد<select id="accParent"><option value="">بدون والد</option>${accountOptions()}</select></label><label class="field">ماهیت<select id="accNature"><option value="debit">بدهکار</option><option value="credit">بستانکار</option></select></label></div><div class="actions"><button class="btn btn-primary" id="accAddAccount">افزودن حساب</button><button class="btn btn-secondary" id="accCancelEdit" hidden>لغو ویرایش</button></div><input type="hidden" id="accEditId">${renderAccounts()}</div>
     </section><section class="acc-section" data-acc-section="fiscal"><div class="card accounting-inner-card"><h3>سال مالی</h3>
-<label class="field">سال مالی فعال (برای تمام ثبت‌ها)<select id="fyActive">${data.fiscalPeriods.filter(p=>p.status==='open').map(p=>`<option value="${p.id}" ${data.settings.activeFiscalPeriodId===p.id?'selected':''}>${esc(p.title)}</option>`).join('')||'<option value="">سال باز تعریف نشده</option>'}</select></label>
+<label class="field">سال مالی فعال (برای تمام ثبت‌ها)<select id="fyActive">${acc.fiscalPeriods.filter(p=>p.status==='open').map(p=>`<option value="${p.id}" ${acc.settings.activeFiscalPeriodId===p.id?'selected':''}>${esc(p.title)}</option>`).join('')||'<option value="">سال باز تعریف نشده</option>'}</select></label>
 <button class="btn btn-primary" id="fySetActive" type="button" style="margin-top:8px">اعمال سال فعال</button>
 <hr style="margin:16px 0;border:0;border-top:1px solid var(--border-color,#e2e8f0)">
 <div class="form-grid"><label class="field">عنوان<input id="fyTitle" placeholder="مثلاً سال مالی ۱۴۰۵"></label><label class="field">تاریخ شروع<input id="fyStart" placeholder="۱۴۰۵/۰۱/۰۱"></label><label class="field">تاریخ پایان<input id="fyEnd" placeholder="۱۴۰۵/۱۲/۲۹"></label></div><button class="btn btn-primary" id="fyCreate">ایجاد سال مالی</button>${renderPeriods()}</div>
