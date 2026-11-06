@@ -146,6 +146,83 @@ async function persistPostedJournal(accounting: AccountingData, entry: JournalEn
   return entry.id;
 }
 
+/**
+ * ثبت سریع هزینه یا درآمد متفرقه در بازرگانی.
+ * هزینه: بدهکار حساب هزینه / بستانکار صندوق یا بانک
+ * درآمد: بدهکار صندوق یا بانک / بستانکار حساب درآمد
+ */
+export async function recordOperatingEntry(input: {
+  kind: 'expense' | 'income';
+  date: string;
+  fiscalPeriodId: string;
+  amountRial: number;
+  operatingAccountId: string;
+  cashAccountId: string;
+  description: string;
+  partyId?: string;
+}): Promise<{ journalEntryId: string }> {
+  if (!['expense', 'income'].includes(input.kind)) throw new Error('نوع ثبت باید هزینه یا درآمد باشد.');
+  if (!Number.isSafeInteger(input.amountRial) || input.amountRial <= 0) throw new Error('مبلغ باید عددی مثبت و معتبر باشد.');
+  const description = (input.description || '').trim();
+  if (!description) throw new Error('شرح سند الزامی است.');
+  const accounting = await loadAccountingData();
+  validateDateAndPeriod(input.date, input.fiscalPeriodId, accounting);
+  const opAcc = accounting.accounts.find(a => a.id === input.operatingAccountId && a.isActive && a.level === 'detail');
+  if (!opAcc) throw new Error('حساب هزینه/درآمد معتبر انتخاب کنید.');
+  const cashAcc = accounting.accounts.find(a => a.id === input.cashAccountId && a.isActive && a.level === 'detail');
+  if (!cashAcc) throw new Error('حساب صندوق یا بانک معتبر انتخاب کنید.');
+  if (input.kind === 'expense' && !opAcc.code.startsWith('6')) throw new Error('برای هزینه، حساب از گروه هزینه‌ها (کد ۶) انتخاب کنید.');
+  if (input.kind === 'income' && !opAcc.code.startsWith('4')) throw new Error('برای درآمد، حساب از گروه درآمدها (کد ۴) انتخاب کنید.');
+  const partyId = input.partyId?.trim() || undefined;
+  if (partyId) {
+    const commerceData = await loadCommerceData();
+    const party = commerceData.parties.find(p => p.id === partyId && p.isActive);
+    if (!party) throw new Error('طرف حساب انتخاب‌شده فعال نیست.');
+  }
+  const sourceKey = `operating:${input.kind}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+  const prefix = input.kind === 'expense' ? 'EX' : 'IN';
+  const lines = input.kind === 'expense'
+    ? [
+        journalLine(opAcc.id, description, input.amountRial, 0, partyId),
+        journalLine(cashAcc.id, description, 0, input.amountRial),
+      ]
+    : [
+        journalLine(cashAcc.id, description, input.amountRial, 0),
+        journalLine(opAcc.id, description, 0, input.amountRial, partyId),
+      ];
+  const entry = journalBase(sourceKey, prefix, input.fiscalPeriodId, input.date, description, 'manual', lines);
+  const journalEntryId = await persistPostedJournal(accounting, entry);
+  return { journalEntryId };
+}
+
+/** فهرست اسناد هزینه/درآمد ثبت‌شده از بازرگانی */
+export function listOperatingEntries(accounting: AccountingData, kind?: 'expense' | 'income', limit = 50) {
+  return accounting.journalEntries
+    .filter(e => e.status === 'posted' && typeof e.sourceDocumentId === 'string' && e.sourceDocumentId.startsWith('operating:'))
+    .filter(e => !kind || e.sourceDocumentId!.startsWith(`operating:${kind}:`))
+    .slice()
+    .sort((a, b) => b.date.localeCompare(a.date) || b.number.localeCompare(a.number, 'en'))
+    .slice(0, limit)
+    .map(e => {
+      const amount = e.lines.reduce((s, l) => s + l.debitRial, 0);
+      const isExpense = e.sourceDocumentId!.includes(':expense:');
+      const opLine = isExpense
+        ? e.lines.find(l => l.debitRial > 0)
+        : e.lines.find(l => l.creditRial > 0);
+      const account = accounting.accounts.find(a => a.id === opLine?.accountId);
+      return {
+        id: e.id,
+        number: e.number,
+        date: e.date,
+        description: e.description,
+        amountRial: amount,
+        kind: (isExpense ? 'expense' : 'income') as 'expense' | 'income',
+        accountTitle: account?.title || opLine?.accountTitleSnapshot || '—',
+        accountCode: account?.code || opLine?.accountCodeSnapshot || '',
+      };
+    });
+}
+
 export function buildInvoice(input: {
   type: InvoiceType; number: string; date: string; fiscalPeriodId: string; partyId: string;
   description: string; lines: Array<{description:string; quantityMilli:number; unitPriceRial:number; productId?:string; warehouse?:string; unit?:string; discountRial?:number}>; taxRial:number; taxRateBps?:number; dueDate?:string; paymentTerms?:string; paymentParts?:InvoicePaymentPart[]; notes?:string;

@@ -998,6 +998,58 @@ details[open] > .category-summary .category-chevron { transform: rotate(180deg);
   .accounting-home-tile { min-height: 128px; font-size: 1rem; }
 }
 
+/* برگه تمام‌صفحه ماژول‌های حسابداری و بازرگانی */
+body.accounting-sheet-open { overflow: hidden; }
+.accounting-module-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 10050;
+  background: var(--bg, #f5f7fb);
+  color: var(--text, #172033);
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.accounting-module-sheet-inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: clamp(12px, 3vw, 28px) clamp(12px, 3vw, 24px) 40px;
+  min-height: 100%;
+  box-sizing: border-box;
+}
+.accounting-module-sheet-head {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0 0 16px;
+  padding: 12px 0 14px;
+  background: linear-gradient(180deg, var(--bg, #f5f7fb) 70%, transparent);
+  border-bottom: 1px solid var(--border, #e2e8f0);
+}
+.accounting-module-sheet-kicker {
+  margin: 0 0 4px;
+  font-size: .78rem;
+  font-weight: 700;
+  color: var(--text-soft, #667085);
+  letter-spacing: .02em;
+}
+.accounting-module-sheet-head h2 {
+  margin: 0;
+  font-size: clamp(1.15rem, 2.4vw, 1.45rem);
+}
+.accounting-module-sheet-body {
+  padding-bottom: 24px;
+}
+.commerce-home { margin-top: 4px; }
+.commerce-home .accounting-home-grid { margin-top: 12px; }
+#accountingCommerceWorkspace[hidden],
+#accountingReportsWorkspace[hidden],
+#accountingModuleHost[hidden] { display: none !important; }
+
 /* سند حسابداری چندردیفی */
 .accounting-voucher-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:14px 0 8px}
 .accounting-voucher-lines{display:grid;gap:10px}
@@ -1556,4 +1608,565 @@ details[open] > .category-summary .category-chevron { transform: rotate(180deg);
 #accountingCommerceWorkspace .bank-sub[open]>summary{
   margin-bottom:10px;padding-bottom:8px;
   border-bottom:1px solid var(--border-color,#e8ecf1);
+}
+
+/* ============================================================
+   سیستم طراحی یکپارچه حسابداری — کادر، فرم، ردیف، جدول
+   تمام بخش‌ها: فاکتور، اقلام، بانک، طرف حساب، اسناد، کدینگ، …
+   ============================================================ */
+:root {
+  --acc-radius: 14px;
+  --acc-radius-sm: 10px;
+  --acc-pad: 16px;
+  --acc-gap: 12px;
+  --acc-input-h: 42px;
+  --acc-border: var(--border);
+  --acc-border-soft: var(--border-light);
+  --acc-surface: var(--card);
+  --acc-muted: var(--primary-soft);
+  --acc-shadow: var(--shadow-sm);
+}
+
+.accounting-module-sheet,
+.commerce-module-sheet,
+#accountingModuleSheet,
+#commercePanelSheet,
+#invoiceItemsSheet,
+#invoiceTypeSheet,
+#partyFormSheet,
+#accountingWorkspace,
+#accountingCommerceWorkspace,
+#accountingReportsWorkspace {
+  --border-color: var(--border);
+  --surface: var(--card);
+  --surface-muted: var(--primary-soft);
+  --surface-subtle: var(--bg2);
+  --card-bg: var(--card);
+  --text-muted: var(--text-soft);
+}
+
+/* کادر استاندارد */
+.accounting-module-sheet .card,
+.commerce-module-sheet .card,
+#accountingModuleSheet .card,
+#commercePanelSheet .card,
+#invoiceItemsSheet .card,
+#partyFormSheet .card,
+#accountingWorkspace .card,
+#accountingWorkspace .accounting-inner-card,
+#accountingCommerceWorkspace .card,
+#accountingCommerceWorkspace .commerce-invoice-card,
+#accountingCommerceWorkspace .cash-entry-card,
+#accountingReportsWorkspace .card {
+  background: var(--acc-surface);
+  border: 1px solid var(--acc-border-soft);
+  border-radius: var(--acc-radius);
+  box-shadow: var(--acc-shadow);
+  padding: var(--acc-pad);
+  margin-top: 12px;
+  color: var(--text);
+  direction: rtl;
+  text-align: right;
+}
+
+.accounting-module-sheet .card > h3,
+.commerce-module-sheet .card > h3,
+#accountingModuleSheet .card > h3,
+#commercePanelSheet .card > h3,
+#accountingWorkspace .card > h3,
+#accountingWorkspace .accounting-inner-card > h3,
+#accountingCommerceWorkspace .card > h3,
+#accountingCommerceWorkspace .commerce-invoice-card > h3,
+#accountingReportsWorkspace .card > h3 {
+  margin: 0 0 14px;
+  padding: 0 0 12px;
+  border-bottom: 1px solid var(--acc-border-soft);
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--primary-dark);
+  text-align: right;
+}
+
+/* شبکه فرم و فیلد */
+.accounting-module-sheet .form-grid,
+.commerce-module-sheet .form-grid,
+#accountingModuleSheet .form-grid,
+#commercePanelSheet .form-grid,
+#invoiceItemsSheet .form-grid,
+#partyFormSheet .form-grid,
+#accountingWorkspace .form-grid,
+#accountingCommerceWorkspace .form-grid,
+#accountingReportsWorkspace .form-grid,
+#accountingCommerceWorkspace .cash-entry-grid,
+#commercePanelSheet .cash-entry-grid,
+#accountingCommerceWorkspace .bank-entry-grid,
+#commercePanelSheet .bank-entry-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--acc-gap);
+  margin: 12px 0 14px;
+  direction: rtl;
+  text-align: right;
+  align-items: end;
+}
+
+.accounting-module-sheet .field,
+.commerce-module-sheet .field,
+#accountingModuleSheet .field,
+#commercePanelSheet .field,
+#invoiceItemsSheet .field,
+#partyFormSheet .field,
+#accountingWorkspace .field,
+#accountingCommerceWorkspace .field,
+#accountingReportsWorkspace .field {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  margin: 0;
+  min-width: 0;
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--text-soft);
+  text-align: right;
+  direction: rtl;
+}
+
+.accounting-module-sheet .field input,
+.accounting-module-sheet .field select,
+.accounting-module-sheet .field textarea,
+.commerce-module-sheet .field input,
+.commerce-module-sheet .field select,
+.commerce-module-sheet .field textarea,
+#accountingModuleSheet .field input,
+#accountingModuleSheet .field select,
+#accountingModuleSheet .field textarea,
+#commercePanelSheet .field input,
+#commercePanelSheet .field select,
+#commercePanelSheet .field textarea,
+#invoiceItemsSheet .field input,
+#invoiceItemsSheet .field select,
+#invoiceItemsSheet .field textarea,
+#partyFormSheet .field input,
+#partyFormSheet .field select,
+#partyFormSheet .field textarea,
+#accountingWorkspace .field input,
+#accountingWorkspace .field select,
+#accountingWorkspace .field textarea,
+#accountingCommerceWorkspace .field input,
+#accountingCommerceWorkspace .field select,
+#accountingCommerceWorkspace .field textarea,
+#accountingReportsWorkspace .field input,
+#accountingReportsWorkspace .field select,
+#accountingReportsWorkspace .field textarea,
+#accountingCommerceWorkspace .commerce-invoice-card .field input,
+#accountingCommerceWorkspace .commerce-invoice-card .field select,
+#accountingCommerceWorkspace .commerce-invoice-card .field textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--acc-input-h);
+  padding: 9px 12px;
+  border: 1px solid var(--acc-border);
+  border-radius: var(--acc-radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.92rem;
+  box-shadow: none;
+  transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+  text-align: right;
+  direction: rtl;
+}
+
+.accounting-module-sheet .field textarea,
+#commercePanelSheet .field textarea,
+#partyFormSheet .field textarea,
+#accountingWorkspace .field textarea,
+#accountingCommerceWorkspace .field textarea {
+  min-height: 72px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.accounting-module-sheet .field input:focus,
+.accounting-module-sheet .field select:focus,
+.accounting-module-sheet .field textarea:focus,
+#commercePanelSheet .field input:focus,
+#commercePanelSheet .field select:focus,
+#commercePanelSheet .field textarea:focus,
+#invoiceItemsSheet .field input:focus,
+#partyFormSheet .field input:focus,
+#accountingWorkspace .field input:focus,
+#accountingCommerceWorkspace .field input:focus,
+#accountingCommerceWorkspace .field select:focus,
+#accountingCommerceWorkspace .field textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(8, 115, 79, 0.14);
+  background: var(--card);
+}
+
+.accounting-module-sheet .field input[inputmode="numeric"],
+.accounting-module-sheet .field input[inputmode="decimal"],
+#commercePanelSheet .field input[inputmode="numeric"],
+#commercePanelSheet .field input[inputmode="decimal"],
+#invoiceItemsSheet .field input[inputmode="numeric"],
+#invoiceItemsSheet .field input[inputmode="decimal"],
+#accountingWorkspace .field input[inputmode="numeric"],
+#accountingWorkspace .field input[inputmode="decimal"],
+#accountingCommerceWorkspace .field input[inputmode="numeric"],
+#accountingCommerceWorkspace .field input[inputmode="decimal"] {
+  direction: ltr;
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+
+.accounting-module-sheet .field input[readonly],
+#commercePanelSheet .field input[readonly],
+#invoiceItemsSheet .field input[readonly],
+#accountingCommerceWorkspace .field input[readonly],
+#accountingCommerceWorkspace .commerce-line input[readonly] {
+  background: var(--acc-muted);
+  color: var(--text);
+  cursor: default;
+  border-style: dashed;
+}
+
+/* ردیف‌های اقلام فاکتور و سند */
+.accounting-module-sheet .commerce-line,
+#commercePanelSheet .commerce-line,
+#invoiceItemsSheet .commerce-line,
+#accountingCommerceWorkspace .commerce-line,
+#accountingCommerceWorkspace .commerce-invoice-card .commerce-line,
+.accounting-voucher-line {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  align-items: end;
+  margin: 10px 0 !important;
+  padding: 14px !important;
+  border: 1px solid var(--acc-border-soft) !important;
+  border-radius: var(--acc-radius-sm) !important;
+  background: var(--acc-surface) !important;
+  box-shadow: 0 1px 2px rgba(7, 92, 77, 0.04);
+}
+
+.accounting-voucher-line {
+  grid-template-columns: minmax(150px, 1.2fr) minmax(130px, 1fr) minmax(110px, .8fr) minmax(110px, .8fr) auto;
+}
+
+#invoiceItemsSheet .commerce-lines-head,
+#invoiceItemsSheet .invoice-product-tools,
+#accountingCommerceWorkspace .invoice-product-tools,
+#commercePanelSheet .invoice-product-tools,
+#accountingCommerceWorkspace .invoice-items-toolbar,
+#commercePanelSheet .invoice-items-toolbar,
+#accountingCommerceWorkspace .invoice-action-bar,
+#commercePanelSheet .invoice-action-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 12px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--acc-border);
+  border-radius: var(--acc-radius-sm);
+  background: var(--acc-muted);
+  direction: rtl;
+  text-align: right;
+}
+
+#invoiceItemsSheet .invoice-product-tools,
+#accountingCommerceWorkspace .invoice-product-tools {
+  display: grid;
+  grid-template-columns: minmax(160px, 1.4fr) auto minmax(140px, 1fr) auto auto;
+  align-items: end;
+}
+
+/* جدول */
+.accounting-module-sheet .table-wrap,
+#commercePanelSheet .table-wrap,
+#invoiceItemsSheet .table-wrap,
+#partyFormSheet .table-wrap,
+#accountingWorkspace .table-wrap,
+#accountingCommerceWorkspace .table-wrap,
+#accountingReportsWorkspace .table-wrap {
+  border: 1px solid var(--acc-border-soft);
+  border-radius: var(--acc-radius-sm);
+  overflow: auto;
+  margin-top: 12px;
+  background: var(--acc-surface);
+  box-shadow: 0 1px 2px rgba(7, 92, 77, 0.04);
+}
+
+.accounting-module-sheet .data-table,
+#commercePanelSheet .data-table,
+#accountingWorkspace .data-table,
+#accountingCommerceWorkspace .data-table,
+#accountingReportsWorkspace .data-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: right;
+  direction: rtl;
+  font-size: 0.88rem;
+}
+
+.accounting-module-sheet .data-table th,
+#commercePanelSheet .data-table th,
+#accountingWorkspace .data-table th,
+#accountingCommerceWorkspace .data-table th,
+#accountingReportsWorkspace .data-table th {
+  background: var(--acc-muted);
+  color: var(--primary-dark);
+  font-weight: 800;
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--acc-border);
+  white-space: nowrap;
+}
+
+.accounting-module-sheet .data-table td,
+#commercePanelSheet .data-table td,
+#accountingWorkspace .data-table td,
+#accountingCommerceWorkspace .data-table td,
+#accountingReportsWorkspace .data-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--acc-border-soft);
+  color: var(--text);
+  vertical-align: middle;
+}
+
+.accounting-module-sheet .data-table tr:last-child td,
+#commercePanelSheet .data-table tr:last-child td,
+#accountingWorkspace .data-table tr:last-child td,
+#accountingCommerceWorkspace .data-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.accounting-module-sheet .data-table tbody tr:hover,
+#commercePanelSheet .data-table tbody tr:hover,
+#accountingWorkspace .data-table tbody tr:hover,
+#accountingCommerceWorkspace .data-table tbody tr:hover {
+  background: rgba(8, 115, 79, 0.04);
+}
+
+/* کارت آمار */
+.accounting-module-sheet .stat-card,
+#commercePanelSheet .stat-card,
+#accountingWorkspace .stat-card,
+#accountingCommerceWorkspace .stat-card {
+  text-align: right;
+  padding: 14px 16px;
+  border-radius: var(--acc-radius-sm);
+  border: 1px solid var(--acc-border-soft);
+  background: linear-gradient(160deg, var(--acc-surface), var(--acc-muted));
+  box-shadow: 0 1px 2px rgba(7, 92, 77, 0.05);
+}
+
+.accounting-module-sheet .stat-card b,
+.accounting-module-sheet .stat-card strong,
+#commercePanelSheet .stat-card b,
+#accountingCommerceWorkspace .stat-card b,
+#accountingWorkspace .stat-card b {
+  display: block;
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--primary-dark);
+  margin-bottom: 4px;
+}
+
+.accounting-module-sheet .stat-card span,
+#commercePanelSheet .stat-card span,
+#accountingCommerceWorkspace .stat-card span,
+#accountingWorkspace .stat-card span {
+  display: block;
+  color: var(--text-soft);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+/* نوار عملیات و دکمه‌ها داخل حسابداری */
+.accounting-module-sheet .actions,
+#commercePanelSheet .actions,
+#accountingWorkspace .actions,
+#accountingCommerceWorkspace .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 12px;
+  direction: rtl;
+}
+
+.accounting-module-sheet .btn,
+#commercePanelSheet .btn,
+#invoiceItemsSheet .btn,
+#partyFormSheet .btn,
+#invoiceTypeSheet .btn,
+#accountingWorkspace .btn,
+#accountingCommerceWorkspace .btn,
+#accountingReportsWorkspace .btn {
+  border-radius: var(--acc-radius-sm);
+  min-height: 40px;
+  padding: 9px 14px;
+  font-weight: 750;
+}
+
+.accounting-module-sheet .btn-sm,
+#commercePanelSheet .btn-sm,
+#accountingCommerceWorkspace .btn-sm {
+  min-height: 34px;
+  padding: 6px 10px;
+  font-size: 0.82rem;
+  border-radius: 8px;
+}
+
+/* زیره‌های فرعی بانک و جزئیات */
+#commercePanelSheet .bank-sub,
+#accountingCommerceWorkspace .bank-sub {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: var(--acc-radius-sm);
+  border: 1px solid var(--acc-border-soft);
+  background: var(--acc-surface);
+  direction: rtl;
+  text-align: right;
+}
+
+#commercePanelSheet .bank-sub > summary,
+#accountingCommerceWorkspace .bank-sub > summary {
+  cursor: pointer;
+  font-weight: 750;
+  color: var(--primary-dark);
+  list-style: none;
+}
+
+#commercePanelSheet .bank-sub[open] > summary,
+#accountingCommerceWorkspace .bank-sub[open] > summary {
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--acc-border-soft);
+}
+
+/* سربرگ صفحه داخل برگه */
+.accounting-module-sheet .commerce-page-header,
+#commercePanelSheet .commerce-page-header,
+#accountingCommerceWorkspace .commerce-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--acc-border-soft);
+  border-radius: var(--acc-radius-sm);
+  background: var(--acc-muted);
+  direction: rtl;
+  text-align: right;
+}
+
+.accounting-module-sheet .commerce-page-header h2,
+#commercePanelSheet .commerce-page-header h2,
+#accountingCommerceWorkspace .commerce-page-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--primary-dark);
+}
+
+.accounting-module-sheet .commerce-page-chip,
+#commercePanelSheet .commerce-page-chip,
+#accountingCommerceWorkspace .commerce-page-chip {
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--acc-surface);
+  border: 1px solid var(--acc-border);
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: var(--primary-dark);
+  white-space: nowrap;
+}
+
+/* حذف ظاهر خط‌کشی قدیمی فرم فاکتور برای یکدستی */
+#accountingCommerceWorkspace .commerce-invoice-card > .form-grid:first-of-type,
+#commercePanelSheet .commerce-invoice-card > .form-grid:first-of-type {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--acc-gap);
+  margin: 12px 0 14px;
+  border: 0;
+  padding: 0;
+}
+
+#accountingCommerceWorkspace .commerce-invoice-card > .form-grid:first-of-type > .field,
+#commercePanelSheet .commerce-invoice-card > .form-grid:first-of-type > .field {
+  display: flex;
+  flex-direction: column;
+  grid-template-columns: none;
+  border-bottom: 0;
+  padding: 0;
+  gap: 6px;
+}
+
+#accountingCommerceWorkspace .commerce-invoice-card > .form-grid:first-of-type input:not([type=hidden]),
+#accountingCommerceWorkspace .commerce-invoice-card > .form-grid:first-of-type select,
+#commercePanelSheet .commerce-invoice-card > .form-grid:first-of-type input:not([type=hidden]),
+#commercePanelSheet .commerce-invoice-card > .form-grid:first-of-type select {
+  border: 1px solid var(--acc-border);
+  border-radius: var(--acc-radius-sm);
+  background: var(--bg);
+  min-height: var(--acc-input-h);
+  box-shadow: none;
+}
+
+/* جمع‌ها و خلاصه فاکتور */
+#accountingCommerceWorkspace .invoice-totals,
+#commercePanelSheet .invoice-totals,
+#accountingCommerceWorkspace .commerce-invoice-summary {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: var(--acc-radius-sm);
+  border: 1px solid var(--acc-border);
+  background: var(--acc-muted);
+  direction: rtl;
+  text-align: right;
+}
+
+@media (max-width: 900px) {
+  #invoiceItemsSheet .invoice-product-tools,
+  #accountingCommerceWorkspace .invoice-product-tools {
+    grid-template-columns: 1fr 1fr;
+  }
+  .accounting-voucher-line {
+    grid-template-columns: 1fr 1fr;
+  }
+  .accounting-voucher-line .field:first-child,
+  .accounting-voucher-line .field:nth-child(2) {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 560px) {
+  .accounting-module-sheet .form-grid,
+  #commercePanelSheet .form-grid,
+  #accountingWorkspace .form-grid,
+  #accountingCommerceWorkspace .form-grid,
+  #accountingCommerceWorkspace .cash-entry-grid,
+  #commercePanelSheet .cash-entry-grid,
+  #accountingCommerceWorkspace .bank-entry-grid,
+  #commercePanelSheet .bank-entry-grid {
+    grid-template-columns: 1fr;
+  }
+  #invoiceItemsSheet .invoice-product-tools,
+  #accountingCommerceWorkspace .invoice-product-tools,
+  #accountingCommerceWorkspace .commerce-invoice-card .commerce-line,
+  #invoiceItemsSheet .commerce-line {
+    grid-template-columns: 1fr 1fr;
+  }
+  .accounting-module-sheet .card,
+  #commercePanelSheet .card,
+  #accountingCommerceWorkspace .commerce-invoice-card {
+    padding: 14px;
+  }
 }

@@ -61,6 +61,10 @@ export interface JournalEntry {
   postedAt?: string;
   /** شناسه سند تجاری مبدأ برای جلوگیری از ثبت حسابداری تکراری */
   sourceDocumentId?: string;
+  /** اگر این سند، معکوسِ یک سند قطعی دیگر باشد */
+  reversesEntryId?: string;
+  /** اگر این سند قطعی با سند معکوس خنثی شده باشد */
+  reversedByEntryId?: string;
 }
 
 export interface AccountingSettings {
@@ -316,6 +320,83 @@ export function postJournalEntry(data: AccountingData, entryId: string): Account
     }),
   };
   return { ...data, journalEntries: data.journalEntries.map((item) => item.id === entryId ? posted : item) };
+}
+
+/**
+ * صدور سند معکوس (اصلاحی) برای یک سند قطعی.
+ * آرتیکل‌ها جابه‌جا می‌شوند؛ سند اصلی ویرایش نمی‌شود و فقط به سند معکوس لینک می‌شود.
+ */
+export function createReversingJournalEntry(
+  data: AccountingData,
+  originalEntryId: string,
+  options?: { date?: string; description?: string; autoPost?: boolean },
+): AccountingData {
+  const original = data.journalEntries.find((item) => item.id === originalEntryId);
+  if (!original) throw new Error('سند اصلی پیدا نشد.');
+  if (original.status !== 'posted') throw new Error('فقط سند قطعی قابل معکوس‌سازی است.');
+  if (original.reversedByEntryId) {
+    const existing = data.journalEntries.find((x) => x.id === original.reversedByEntryId);
+    throw new Error(existing
+      ? `این سند قبلاً با سند ${existing.number} معکوس شده است.`
+      : 'این سند قبلاً معکوس شده است.');
+  }
+  if (original.reversesEntryId) throw new Error('خودِ سند معکوس را دوباره معکوس نکنید؛ در صورت نیاز سند جدید ثبت کنید.');
+
+  const period = resolveActiveFiscalPeriod(data);
+  const date = options?.date || original.date;
+  if (!/^\d{4}\/\d{2}\/\d{2}$/.test(date)) throw new Error('تاریخ سند معکوس باید شمسی و به شکل سال/ماه/روز باشد.');
+  if (period.status !== 'open') throw new Error('سال مالی فعال بسته است؛ سند معکوس ثبت نمی‌شود.');
+  if (date < period.startDate || date > period.endDate) throw new Error('تاریخ سند معکوس خارج از محدوده سال مالی فعال است.');
+
+  const reverseLines: JournalLine[] = original.lines.map((line) => ({
+    id: makeId('line'),
+    accountId: line.accountId,
+    description: line.description ? `معکوس: ${line.description}` : `معکوس سند ${original.number}`,
+    debitRial: line.creditRial,
+    creditRial: line.debitRial,
+    partyId: line.partyId,
+  }));
+
+  const description = (options?.description || '').trim()
+    || `سند معکوس بابت سند ${original.number} — ${original.description}`;
+
+  const baseNumber = `REV-${original.number}`;
+  let number = baseNumber;
+  let n = 2;
+  while (data.journalEntries.some((e) => e.number === number)) {
+    number = `${baseNumber}-${n++}`;
+  }
+
+  const timestamp = now();
+  const reverseEntry: JournalEntry = {
+    id: makeId('je'),
+    number,
+    fiscalPeriodId: period.id,
+    date,
+    description,
+    status: 'draft',
+    source: 'manual',
+    sourceDocumentId: `reverse:${original.id}`,
+    reversesEntryId: original.id,
+    lines: reverseLines,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+
+  let next = upsertJournalEntry(data, reverseEntry);
+  if (options?.autoPost !== false) {
+    next = postJournalEntry(next, reverseEntry.id);
+  }
+  const finalReverse = next.journalEntries.find((e) => e.id === reverseEntry.id)!;
+  next = {
+    ...next,
+    journalEntries: next.journalEntries.map((e) =>
+      e.id === original.id
+        ? { ...e, reversedByEntryId: finalReverse.id, updatedAt: timestamp }
+        : e,
+    ),
+  };
+  return next;
 }
 
 export function validateJournalEntry(entry: Pick<JournalEntry, 'fiscalPeriodId' | 'date' | 'lines'>, data: AccountingData, requireBalance = true): string[] {

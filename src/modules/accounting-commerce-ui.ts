@@ -3,6 +3,7 @@ import { loadAccountingData, parseMoneyToRial, formatMoneyFromRial, resolveActiv
 import {
   loadCommerceData, saveCommerceData, buildInvoice, updateDraftInvoice, postInvoice,
   createCashTransaction, ensureCommerceAccounts, updateChequeStatus, invoiceOutstanding,
+  upsertParty, recordOperatingEntry, listOperatingEntries,
   type CommerceData, type AccountingParty, type InvoiceType, type InvoicePaymentPart, isSaleInvoiceType, isPurchaseInvoiceType,
 } from './accounting-commerce';
 import { toast } from './ui';
@@ -10,7 +11,10 @@ import { products, logAudit, findProductByCode } from './state';
 import { openScanner } from './scanner';
 import { loadInventoryCostData, saveInventoryCostData, setOpeningStockCost } from './inventory-costing';
 import { buildInventoryReconciliation } from './inventory-reconciliation';
-import { createInternalTransfer, getBankAccountBalances, importBankStatement, loadBankReconciliation, parseBankStatementCsv } from './accounting-bank';
+import {
+  createInternalTransfer, getBankAccountBalances, importBankStatement, loadBankReconciliation, parseBankStatementCsv,
+  createCashBankMove, createBankFee, getBankAccountLedger, getBankReconciliationSummary,
+} from './accounting-bank';
 import { extendChequeDueDate, getChequeDashboard, loadChequeBook, recordChequeEvent, replaceChequeDetails } from './accounting-cheques';
 import { endorseCheque, getChequeEndorsement, getChequeEndorsements, getChequeEndorsementRemaining } from './accounting-cheque-endorsement';
 import { loadChequeChain, getChainAvailable, transferEndorsedCheque } from './accounting-cheque-chain';
@@ -28,8 +32,10 @@ let editingInvoiceId: string | null = null;
 let profitabilityFilter:ProfitabilityFilter={};
 let managementFilter:ProfitabilityFilter={};
 let currency: 'rial'|'toman' = 'toman';
-let activeCommerceSection: 'sale'|'purchase'|'receipts'|'cheques'|'aging'|'banking'|'management'|'inventory' = 'sale';
+let activeCommerceSection: 'home'|'sale'|'purchase'|'receipts'|'cheques'|'aging'|'banking'|'management'|'inventory'|'parties'|'operating' = 'home';
 let activeInvoiceType: InvoiceType = 'sale';
+let editingPartyId: string | null = null;
+let suppressCommerceSheetReopen = false;
 const invoiceTypeTitle=(t:InvoiceType)=>t==='sale'?'فاکتور فروش':t==='purchase'?'فاکتور خرید':t==='return-sale'?'برگشت از فروش':t==='return-purchase'?'برگشت از خرید':'پیش‌فاکتور';
 let fiscalPeriodsCache: Array<{id:string;startDate:string;endDate:string;status:string}> = [];
 const fa=(n:number)=>new Intl.NumberFormat('fa-IR').format(n);
@@ -40,6 +46,115 @@ const id=(p:string)=>`${p}_${Date.now().toString(36)}_${Math.random().toString(3
 function money(rial:number):string { try{return `${fa(Number(formatMoneyFromRial(rial,currency)))} ${currency==='toman'?'تومان':'ریال'}`;}catch{return fa(rial)} }
 function partyOptions(type?:'customer'|'supplier'):string {
   return (commerce?.parties||[]).filter(p=>p.isActive&&(!type||p.type==='both'||p.type===type)).map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
+}
+function partyTypeLabel(t:AccountingParty['type']):string {
+  return t==='customer'?'مشتری':t==='supplier'?'تأمین‌کننده':'مشتری و تأمین‌کننده';
+}
+function partiesPanelHtml():string {
+  const rows=(commerce?.parties||[]).slice().sort((a,b)=>a.name.localeCompare(b.name,'fa')).map(p=>`<tr class="${p.isActive?'':'party-inactive'}"><td>${esc(p.name)}</td><td>${partyTypeLabel(p.type)}</td><td>${esc(p.phone||'—')}</td><td>${esc(p.nationalId||'—')}</td><td>${esc(p.address||'—')}</td><td>${p.isActive?'فعال':'غیرفعال'}</td><td><button type="button" class="btn btn-sm btn-secondary" data-edit-party="${esc(p.id)}">ویرایش</button></td></tr>`).join('')||'<tr><td colspan="7">هنوز طرف حسابی ثبت نشده است.</td></tr>';
+  const editing=editingPartyId?(commerce?.parties||[]).find(p=>p.id===editingPartyId):undefined;
+  return `<div class="card" style="margin-top:12px" dir="rtl">
+<h3>تعریف شخص / طرف حساب</h3>
+<p class="hint">فیلدهای استاندارد: نام، موبایل، آدرس، شناسه ملی، کد اقتصادی، شماره ثبت، کد پستی و نوع طرف حساب. از همین فرم می‌توانید مشتری یا تأمین‌کننده جدید بسازید یا ویرایش کنید.</p>
+<div class="form-grid" id="partyFormGrid">
+<input type="hidden" id="partyEditId" value="${esc(editing?.id||'')}">
+<label class="field">نام <span class="required">*</span><input id="partyName" value="${esc(editing?.name||'')}" placeholder="نام شخص یا شرکت" autocomplete="name"></label>
+<label class="field">نوع طرف حساب
+<select id="partyType">
+<option value="customer"${!editing||editing.type==='customer'?' selected':''}>مشتری</option>
+<option value="supplier"${editing?.type==='supplier'?' selected':''}>تأمین‌کننده</option>
+<option value="both"${editing?.type==='both'?' selected':''}>مشتری و تأمین‌کننده</option>
+</select></label>
+<label class="field">موبایل / تلفن<input id="partyPhone" value="${esc(editing?.phone||'')}" placeholder="۰۹۱۲..." inputmode="tel" autocomplete="tel"></label>
+<label class="field">شناسه ملی / کد ملی<input id="partyNationalId" value="${esc(editing?.nationalId||'')}" placeholder="۱۰ تا ۱۴ رقم" inputmode="numeric"></label>
+<label class="field">کد اقتصادی<input id="partyEconomicCode" value="${esc(editing?.economicCode||'')}" placeholder="اختیاری"></label>
+<label class="field">شماره ثبت<input id="partyRegistrationNumber" value="${esc(editing?.registrationNumber||'')}" placeholder="اختیاری"></label>
+<label class="field">کد پستی<input id="partyPostalCode" value="${esc(editing?.postalCode||'')}" placeholder="۱۰ رقم" inputmode="numeric"></label>
+<label class="field" style="grid-column:1/-1">آدرس<textarea id="partyAddress" rows="2" placeholder="نشانی کامل">${esc(editing?.address||'')}</textarea></label>
+<label class="field"><span>وضعیت</span><select id="partyIsActive"><option value="1"${!editing||editing.isActive?' selected':''}>فعال</option><option value="0"${editing&&!editing.isActive?' selected':''}>غیرفعال</option></select></label>
+</div>
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+<button type="button" class="btn btn-primary" id="partySaveBtn">${editing?'ذخیره تغییرات':'ثبت شخص جدید'}</button>
+<button type="button" class="btn btn-secondary" id="partyResetBtn" ${editing?'':'hidden'}>انصراف از ویرایش</button>
+</div>
+<h4 style="margin-top:22px">فهرست طرف حساب‌ها</h4>
+<div class="table-wrap"><table class="data-table"><thead><tr><th>نام</th><th>نوع</th><th>موبایل</th><th>شناسه ملی</th><th>آدرس</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody>${rows}</tbody></table></div>
+</div>`;
+}
+function collectPartyForm():Omit<AccountingParty,'id'|'createdAt'|'updatedAt'> & {id?:string} {
+  const idVal=el<HTMLInputElement>('#partyEditId')?.value.trim()||undefined;
+  return {
+    id:idVal||undefined,
+    name:(el<HTMLInputElement>('#partyName')?.value||'').trim(),
+    type:(el<HTMLSelectElement>('#partyType')?.value||'customer') as AccountingParty['type'],
+    phone:(el<HTMLInputElement>('#partyPhone')?.value||'').trim(),
+    nationalId:digits((el<HTMLInputElement>('#partyNationalId')?.value||'').trim()),
+    economicCode:(el<HTMLInputElement>('#partyEconomicCode')?.value||'').trim(),
+    registrationNumber:(el<HTMLInputElement>('#partyRegistrationNumber')?.value||'').trim(),
+    postalCode:digits((el<HTMLInputElement>('#partyPostalCode')?.value||'').trim()),
+    address:(el<HTMLTextAreaElement>('#partyAddress')?.value||'').trim(),
+    isActive:(el<HTMLSelectElement>('#partyIsActive')?.value||'1')==='1',
+  };
+}
+async function savePartyFromForm(selectInInvoice=false):Promise<AccountingParty|null> {
+  if(!commerce)return null;
+  try{
+    const input=collectPartyForm();
+    const beforeIds=new Set(commerce.parties.map(p=>p.id));
+    const next=upsertParty(commerce,input);
+    const saved=input.id
+      ? next.parties.find(p=>p.id===input.id)
+      : next.parties.find(p=>!beforeIds.has(p.id))||next.parties.find(p=>p.name===input.name);
+    if(!saved)throw new Error('ثبت طرف حساب ناموفق بود.');
+    await saveCommerceData(next);
+    commerce=next;
+    editingPartyId=null;
+    logAudit('party_upsert',{partyId:saved.id,name:input.name,type:input.type});
+    toast(input.id?'طرف حساب به‌روزرسانی شد.':'شخص جدید ثبت شد.','success');
+    if(selectInInvoice){
+      const sel=el<HTMLSelectElement>('#invoiceParty');
+      if(sel){
+        sel.innerHTML='<option value="">انتخاب</option>'+partyOptions(isSaleInvoiceType(activeInvoiceType)?'customer':'supplier');
+        sel.value=saved.id;
+      }
+      const cashSel=el<HTMLSelectElement>('#cashParty');
+      if(cashSel){
+        const t=el<HTMLSelectElement>('#cashType')?.value;
+        cashSel.innerHTML='<option value="">انتخاب</option>'+partyOptions(t==='payment'?'supplier':'customer');
+        cashSel.value=saved.id;
+      }
+    }
+    return saved;
+  }catch(e){
+    toast(e instanceof Error?e.message:'خطا در ثبت طرف حساب','error');
+    return null;
+  }
+}
+function openPartyFormSheet(opts?:{preferType?:'customer'|'supplier'|'both'; selectAfterSave?:boolean; prefillName?:string}):void {
+  document.getElementById('partyFormSheet')?.remove();
+  const prefer=opts?.preferType||(isSaleInvoiceType(activeInvoiceType)?'customer':'supplier');
+  editingPartyId=null;
+  const overlay=document.createElement('div');
+  overlay.id='partyFormSheet';
+  overlay.dir='rtl';
+  overlay.style.cssText='position:fixed;inset:0;z-index:10060;background:var(--surface,#fff);color:var(--text,#222);overflow:auto;padding:clamp(12px,3vw,28px)';
+  overlay.innerHTML=`<div style="max-width:900px;margin:0 auto"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px"><h2 style="margin:0">تعریف شخص جدید</h2><button type="button" class="btn btn-secondary" id="partySheetClose">بستن</button></div>${partiesPanelHtml()}</div>`;
+  document.body.appendChild(overlay);
+  const typeSel=overlay.querySelector<HTMLSelectElement>('#partyType');
+  if(typeSel&&!editingPartyId)typeSel.value=prefer;
+  if(opts?.prefillName){const n=overlay.querySelector<HTMLInputElement>('#partyName');if(n)n.value=opts.prefillName;}
+  const close=(clearEdit=true)=>{overlay.remove();if(clearEdit)editingPartyId=null;};
+  overlay.querySelector('#partySheetClose')?.addEventListener('click',()=>close(true));
+  overlay.querySelector('#partySaveBtn')?.addEventListener('click',async()=>{
+    const saved=await savePartyFromForm(!!opts?.selectAfterSave);
+    if(saved){close(true);await render();}
+  });
+  overlay.querySelector('#partyResetBtn')?.addEventListener('click',()=>{editingPartyId=null;close(true);openPartyFormSheet(opts);});
+  overlay.querySelectorAll<HTMLButtonElement>('[data-edit-party]').forEach(btn=>btn.addEventListener('click',()=>{
+    editingPartyId=btn.dataset.editParty||null;
+    close(false);
+    openPartyFormSheet({preferType:prefer,selectAfterSave:opts?.selectAfterSave});
+  }));
 }
 function periodOptions():string {
   return loadPeriodOptions;
@@ -53,6 +168,37 @@ function accountOptions():string {
   return accountOptionsCache;
 }
 let accountOptionsCache='';
+async function operatingPanelHtml():Promise<string>{
+  const acc=await loadAccountingData();
+  const expenseOpts=acc.accounts.filter(a=>a.isActive&&a.level==='detail'&&a.code.startsWith('6'))
+    .map(a=>`<option value="${esc(a.id)}">${esc(a.code)} — ${esc(a.title)}</option>`).join('');
+  const incomeOpts=acc.accounts.filter(a=>a.isActive&&a.level==='detail'&&a.code.startsWith('4'))
+    .map(a=>`<option value="${esc(a.id)}">${esc(a.code)} — ${esc(a.title)}</option>`).join('');
+  const cashOpts=acc.accounts.filter(a=>a.isActive&&a.level==='detail'&&(a.code.startsWith('1101')||a.id==='det-cash'||a.id==='det-bank'||/صندوق|بانک|تنخواه/.test(a.title)))
+    .map(a=>`<option value="${esc(a.id)}">${esc(a.code)} — ${esc(a.title)}</option>`).join('')||accountOptionsCache;
+  const periodOpts=periodOptions()||acc.fiscalPeriods.filter(p=>p.status==='open').map(p=>`<option value="${esc(p.id)}">${esc(p.title)}</option>`).join('');
+  const recent=listOperatingEntries(acc,undefined,40);
+  const recentRows=recent.map(x=>`<tr><td>${esc(x.date)}</td><td>${x.kind==='expense'?'هزینه':'درآمد'}</td><td>${esc(x.number)}</td><td>${esc(x.accountCode)} ${esc(x.accountTitle)}</td><td>${esc(x.description)}</td><td>${money(x.amountRial)}</td></tr>`).join('')
+    ||'<tr><td colspan="6">هنوز هزینه یا درآمدی از این بخش ثبت نشده است.</td></tr>';
+  return `<div class="card" dir="rtl">
+<h3>ثبت هزینه و درآمد</h3>
+<p class="hint">برای هزینه‌های متفرقه (اجاره، حقوق، ملزومات و …) و درآمدهای غیر از فاکتور فروش. با ثبت، سند حسابداری قطعی ساخته می‌شود.</p>
+<div class="form-grid">
+<label class="field">نوع ثبت<select id="opKind"><option value="expense">هزینه</option><option value="income">درآمد</option></select></label>
+<label class="field">تاریخ شمسی<input id="opDate" value="${todayJalali()}" placeholder="۱۴۰۵/۰۱/۰۱" inputmode="numeric"></label>
+<label class="field">سال مالی<select id="opPeriod">${periodOpts||'<option value="">سال مالی باز تعریف نشده</option>'}</select></label>
+<label class="field">مبلغ (${currency==='toman'?'تومان':'ریال'})<input id="opAmount" inputmode="decimal" placeholder="۰"></label>
+<label class="field" id="opAccountExpenseWrap">حساب هزینه<select id="opExpenseAccount"><option value="">انتخاب حساب هزینه</option>${expenseOpts}</select></label>
+<label class="field" id="opAccountIncomeWrap" hidden>حساب درآمد<select id="opIncomeAccount"><option value="">انتخاب حساب درآمد</option>${incomeOpts}</select></label>
+<label class="field">از / به صندوق یا بانک<select id="opCashAccount"><option value="">انتخاب حساب</option>${cashOpts}</select></label>
+<label class="field">طرف حساب (اختیاری)<select id="opParty"><option value="">بدون طرف حساب</option>${partyOptions()}</select></label>
+<label class="field" style="grid-column:1/-1">شرح<input id="opDescription" placeholder="مثلاً اجاره فروردین / درآمد اجاره انبار"></label>
+</div>
+<div class="actions"><button type="button" class="btn btn-primary" id="opSave">ثبت و صدور سند</button></div>
+<h4 style="margin-top:20px">آخرین ثبت‌ها</h4>
+<div class="table-wrap"><table class="data-table"><thead><tr><th>تاریخ</th><th>نوع</th><th>شماره سند</th><th>حساب</th><th>شرح</th><th>مبلغ</th></tr></thead><tbody>${recentRows}</tbody></table></div>
+</div>`;
+}
 function invoicePeriodForDate(date:string):string {
   if(!/^\d{4}\/\d{2}\/\d{2}$/.test(date)) throw new Error('تاریخ فاکتور باید به شکل سال/ماه/روز شمسی باشد.');
   const period=fiscalPeriodsCache.find(p=>p.status==='open'&&date>=p.startDate&&date<=p.endDate);
@@ -239,17 +385,23 @@ function printInvoice(invoiceId:string):void {
   w.document.close(); w.focus();
 }
 async function bankPanel():Promise<string>{
-  const [balances,recon,accData]=await Promise.all([getBankAccountBalances(),loadBankReconciliation(),loadAccountingData()]);
+  const [balances,recon,accData,reconSum]=await Promise.all([
+    getBankAccountBalances(),loadBankReconciliation(),loadAccountingData(),getBankReconciliationSummary()
+  ]);
   const opts=balances.map(a=>`<option value="${esc(a.id)}">${esc(a.code)} — ${esc(a.title)}</option>`).join('');
-  const feeOpts=accData.accounts.filter(a=>a.isActive&&a.level==='detail'&&/(هزینه|کارمزد)/.test(a.title)).map(a=>`<option value="${esc(a.id)}">${esc(a.code)} — ${esc(a.title)}</option>`).join('');
+  const feeOpts=accData.accounts.filter(a=>a.isActive&&a.level==='detail'&&(a.code.startsWith('6')||/(هزینه|کارمزد)/.test(a.title)))
+    .map(a=>`<option value="${esc(a.id)}">${esc(a.code)} — ${esc(a.title)}</option>`).join('');
   const txs=(commerce?.cashTransactions||[]).slice().reverse();
   const partyName=(id?:string)=>esc(commerce?.parties.find(p=>p.id===id)?.name||'—');
   const chequeSt=(s?:string)=>s==='pending'?'در جریان':s==='cleared'?'وصول':s==='bounced'?'برگشتی':s==='void'?'باطل':(s||'—');
   const recvCheques=txs.filter(t=>t.method==='cheque'&&t.type==='receipt');
   const payCheques=txs.filter(t=>t.method==='cheque'&&t.type==='payment');
-  const cashBook=txs.filter(t=>t.method==='cash').slice(0,100);
-  const bankBook=txs.filter(t=>t.method==='bank'||t.method==='card'||t.method==='transfer').slice(0,100);
-  const reconRows=recon.rows.slice().reverse().slice(0,80).map(r=>`<tr><td>${esc(r.date)}</td><td>${esc(r.description)}</td><td>${money(Math.abs(r.amountRial))} ${r.amountRial>0?'واریز':'برداشت'}</td><td>${r.matched?'تطبیق':'—'}</td></tr>`).join('')||'<tr><td colspan="4">صورت‌حساب وارد نشده</td></tr>';
+  const defaultLedgerId=balances[0]?.id||'';
+  const ledger=defaultLedgerId?await getBankAccountLedger(defaultLedgerId):[];
+  const ledgerRows=ledger.slice(-80).reverse().map(r=>`<tr><td>${esc(r.date)}</td><td>${esc(r.number)}</td><td>${esc(r.description)}</td><td>${money(r.debitRial)}</td><td>${money(r.creditRial)}</td><td>${money(r.balanceRial)}</td></tr>`).join('')
+    ||'<tr><td colspan="6">گردشی برای این حساب ثبت نشده است.</td></tr>';
+  const reconRows=recon.rows.slice().reverse().slice(0,100).map(r=>`<tr><td>${esc(r.date)}</td><td>${esc(r.reference||'—')}</td><td>${esc(r.description)}</td><td>${money(Math.abs(r.amountRial))} ${r.amountRial>0?'واریز':'برداشت'}</td><td>${r.matched?'تطبیق‌شده':'تطبیق‌نشده'}</td></tr>`).join('')
+    ||'<tr><td colspan="5">صورت‌حساب بانکی وارد نشده است.</td></tr>';
   const chequeRow=(t:typeof txs[0],showActions:boolean)=>{
     const pending=t.chequeStatus==='pending';
     const actions=showActions&&pending
@@ -257,38 +409,44 @@ async function bankPanel():Promise<string>{
       :chequeSt(t.chequeStatus);
     return `<tr><td>${esc(t.date)}</td><td>${esc(t.number)}</td><td>${partyName(t.partyId)}</td><td>${money(t.amountRial)}</td><td>${esc(t.chequeNumber||'—')}</td><td>${esc(t.chequeDueDate||'—')}</td><td>${actions}</td></tr>`;
   };
-  const bookRow=(t:typeof txs[0])=>`<tr><td>${esc(t.date)}</td><td>${esc(t.number)}</td><td>${t.type==='receipt'?'واریز':'برداشت'}</td><td>${partyName(t.partyId)}</td><td>${money(t.amountRial)}</td><td>${t.method==='cash'?'نقد':t.method==='card'?'کارت':t.method==='transfer'?'حواله':'بانک'}</td></tr>`;
-  return `<div class="card bank-panel-card" dir="rtl" style="margin-top:12px;text-align:right">
+  const totalBalance=balances.reduce((s,a)=>s+a.balanceRial,0);
+  return `<div class="card bank-panel-card" dir="rtl">
 <h3>بانک و صندوق</h3>
-<div class="table-wrap"><table class="data-table"><thead><tr><th>کد</th><th>حساب</th><th>مانده</th></tr></thead><tbody>${balances.map(a=>`<tr><td>${esc(a.code)}</td><td>${esc(a.title)}</td><td>${money(a.balanceRial)}</td></tr>`).join('')||'<tr><td colspan="3">حسابی تعریف نشده</td></tr>'}</tbody></table></div>
-
-<details class="card bank-sub" open><summary>وصول چک دریافتی</summary>
-<div class="table-wrap"><table class="data-table"><thead><tr><th>تاریخ</th><th>شماره</th><th>طرف</th><th>مبلغ</th><th>شماره چک</th><th>سررسید</th><th>عملیات</th></tr></thead><tbody>${recvCheques.map(t=>chequeRow(t,true)).join('')||'<tr><td colspan="7">چک دریافتی نیست</td></tr>'}</tbody></table></div>
-</details>
-
-<details class="card bank-sub"><summary>چک پرداختی</summary>
-<div class="table-wrap"><table class="data-table"><thead><tr><th>تاریخ</th><th>شماره</th><th>طرف</th><th>مبلغ</th><th>شماره چک</th><th>سررسید</th><th>وضعیت</th></tr></thead><tbody>${payCheques.map(t=>chequeRow(t,true)).join('')||'<tr><td colspan="7">چک پرداختی نیست</td></tr>'}</tbody></table></div>
-</details>
-
-<details class="card bank-sub"><summary>صورتحساب صندوق</summary>
-<div class="table-wrap"><table class="data-table"><thead><tr><th>تاریخ</th><th>شماره</th><th>نوع</th><th>طرف</th><th>مبلغ</th><th>روش</th></tr></thead><tbody>${cashBook.map(bookRow).join('')||'<tr><td colspan="6">گردشی نیست</td></tr>'}</tbody></table></div>
-</details>
-
-<details class="card bank-sub"><summary>صورتحساب بانک</summary>
-<div class="form-grid bank-entry-grid">
-<label class="field">حساب<select id="bankStatementAccount">${opts}</select></label>
-<label class="field">فایل CSV<input id="bankStatementFile" type="file" accept=".csv,text/csv"></label>
+<p class="hint">زیرمجموعه‌های استاندارد: مانده حساب‌ها، دفتر بانک، واریز/برداشت، انتقال، کارمزد، چک و مغایرت‌گیری صورت‌حساب.</p>
+<div class="form-grid" style="margin:12px 0">
+  <div class="stat-card"><b>${money(totalBalance)}</b><span>جمع مانده نقد و بانک</span></div>
+  <div class="stat-card"><b>${fa(reconSum.matched)} / ${fa(reconSum.totalRows)}</b><span>ردیف‌های تطبیق‌شده صورت‌حساب</span></div>
+  <div class="stat-card"><b>${money(reconSum.unmatchedBankRial)}</b><span>مانده ردیف‌های تطبیق‌نشده</span></div>
 </div>
-<button class="btn btn-secondary" id="bankStatementImport" type="button">ورود و تطبیق</button>
-<div class="table-wrap" style="margin-top:12px"><table class="data-table"><thead><tr><th>تاریخ</th><th>شرح</th><th>مبلغ</th><th>وضعیت</th></tr></thead><tbody>${reconRows}</tbody></table></div>
-<h4 style="margin-top:12px">گردش بانکی ثبت‌شده</h4>
-<div class="table-wrap"><table class="data-table"><thead><tr><th>تاریخ</th><th>شماره</th><th>نوع</th><th>طرف</th><th>مبلغ</th><th>روش</th></tr></thead><tbody>${bankBook.map(bookRow).join('')||'<tr><td colspan="6">گردشی نیست</td></tr>'}</tbody></table></div>
+<div class="table-wrap"><table class="data-table"><thead><tr><th>کد</th><th>حساب</th><th>مانده دفتری</th></tr></thead><tbody>${balances.map(a=>`<tr><td>${esc(a.code)}</td><td>${esc(a.title)}</td><td>${money(a.balanceRial)}</td></tr>`).join('')||'<tr><td colspan="3">حساب صندوق/بانک تعریف نشده</td></tr>'}</tbody></table></div>
+
+<details class="card bank-sub" open><summary>۱) دفتر بانک / صندوق</summary>
+<p class="hint">گردش از اسناد حسابداری قطعی حساب انتخاب‌شده.</p>
+<div class="form-grid bank-entry-grid">
+<label class="field">حساب<select id="bankLedgerAccount">${opts}</select></label>
+<button type="button" class="btn btn-secondary" id="bankLedgerLoad">نمایش گردش</button>
+</div>
+<div class="table-wrap" style="margin-top:10px"><table class="data-table"><thead><tr><th>تاریخ</th><th>شماره سند</th><th>شرح</th><th>بدهکار</th><th>بستانکار</th><th>مانده</th></tr></thead><tbody id="bankLedgerBody">${ledgerRows}</tbody></table></div>
 </details>
 
-<details class="card bank-sub"><summary>سند انتقال</summary>
+<details class="card bank-sub"><summary>۲) واریز نقد به بانک / برداشت به صندوق</summary>
+<p class="hint">جابه‌جایی وجه بین صندوق و بانک با صدور سند حسابداری.</p>
+<div class="form-grid bank-entry-grid">
+<label class="field">نوع<select id="bankMoveKind"><option value="deposit">واریز نقد به بانک</option><option value="withdraw">برداشت از بانک به صندوق</option></select></label>
+<label class="field">شماره<input id="bankMoveNo" placeholder="خودکار یا دستی"></label>
+<label class="field">تاریخ<input id="bankMoveDate" placeholder="۱۴۰۵/۰۱/۰۱" value="${todayJalali()}"></label>
+<label class="field">صندوق / تنخواه<select id="bankMoveCash">${opts}</select></label>
+<label class="field">بانک<select id="bankMoveBank">${opts}</select></label>
+<label class="field">مبلغ<input id="bankMoveAmount" inputmode="numeric" placeholder="۰"></label>
+<label class="field" style="grid-column:1/-1">شرح<input id="bankMoveDesc" placeholder="اختیاری"></label>
+</div>
+<button type="button" class="btn btn-primary" id="bankMoveSave">ثبت واریز / برداشت</button>
+</details>
+
+<details class="card bank-sub"><summary>۳) انتقال بین حساب‌ها</summary>
 <div class="form-grid bank-entry-grid">
 <label class="field">شماره<input id="bankTransferNo"></label>
-<label class="field">تاریخ<input id="bankTransferDate" placeholder="۱۴۰۵/۰۱/۰۱"></label>
+<label class="field">تاریخ<input id="bankTransferDate" placeholder="۱۴۰۵/۰۱/۰۱" value="${todayJalali()}"></label>
 <label class="field">از حساب<select id="bankTransferFrom">${opts}</select></label>
 <label class="field">به حساب<select id="bankTransferTo">${opts}</select></label>
 <label class="field">مبلغ<input id="bankTransferAmount" inputmode="numeric" placeholder="۰"></label>
@@ -297,6 +455,43 @@ async function bankPanel():Promise<string>{
 <input type="hidden" id="bankTransferDescription" value="">
 </div>
 <button class="btn btn-primary" id="bankTransferSave" type="button">ثبت انتقال</button>
+</details>
+
+<details class="card bank-sub"><summary>۴) کارمزد بانکی</summary>
+<p class="hint">ثبت کارمزد مستقل (خدمات بانکی، دسته چک و …).</p>
+<div class="form-grid bank-entry-grid">
+<label class="field">شماره<input id="bankFeeNo"></label>
+<label class="field">تاریخ<input id="bankFeeDate" placeholder="۱۴۰۵/۰۱/۰۱" value="${todayJalali()}"></label>
+<label class="field">حساب بانک<select id="bankFeeBank">${opts}</select></label>
+<label class="field">حساب هزینه کارمزد<select id="bankFeeExpense"><option value="">انتخاب</option>${feeOpts}</select></label>
+<label class="field">مبلغ<input id="bankFeeAmount" inputmode="numeric" placeholder="۰"></label>
+<label class="field" style="grid-column:1/-1">شرح<input id="bankFeeDesc" placeholder="کارمزد خدمات بانکی"></label>
+</div>
+<button type="button" class="btn btn-primary" id="bankFeeSave">ثبت کارمزد</button>
+</details>
+
+<details class="card bank-sub"><summary>۵) چک‌های دریافتی (وصول)</summary>
+<div class="table-wrap"><table class="data-table"><thead><tr><th>تاریخ</th><th>شماره</th><th>طرف</th><th>مبلغ</th><th>شماره چک</th><th>سررسید</th><th>عملیات</th></tr></thead><tbody>${recvCheques.map(t=>chequeRow(t,true)).join('')||'<tr><td colspan="7">چک دریافتی نیست</td></tr>'}</tbody></table></div>
+</details>
+
+<details class="card bank-sub"><summary>۶) چک‌های پرداختی</summary>
+<div class="table-wrap"><table class="data-table"><thead><tr><th>تاریخ</th><th>شماره</th><th>طرف</th><th>مبلغ</th><th>شماره چک</th><th>سررسید</th><th>وضعیت</th></tr></thead><tbody>${payCheques.map(t=>chequeRow(t,true)).join('')||'<tr><td colspan="7">چک پرداختی نیست</td></tr>'}</tbody></table></div>
+</details>
+
+<details class="card bank-sub"><summary>۷) مغایرت‌گیری صورت‌حساب بانکی</summary>
+<p class="hint">ورود فایل CSV بانک (ستون‌ها: date, description, reference, amount, balance) و تطبیق خودکار با دریافت/پرداخت‌ها.</p>
+<div class="form-grid" style="margin:8px 0">
+  <div class="stat-card"><b>${fa(reconSum.totalRows)}</b><span>کل ردیف‌ها</span></div>
+  <div class="stat-card"><b>${fa(reconSum.matched)}</b><span>تطبیق‌شده</span></div>
+  <div class="stat-card"><b>${fa(reconSum.unmatched)}</b><span>تطبیق‌نشده</span></div>
+  <div class="stat-card"><b>${money(reconSum.bookBalanceRial)}</b><span>مانده دفتری</span></div>
+</div>
+<div class="form-grid bank-entry-grid">
+<label class="field">حساب بانک<select id="bankStatementAccount">${opts}</select></label>
+<label class="field">فایل CSV<input id="bankStatementFile" type="file" accept=".csv,text/csv"></label>
+</div>
+<button class="btn btn-secondary" id="bankStatementImport" type="button">ورود و تطبیق خودکار</button>
+<div class="table-wrap" style="margin-top:12px"><table class="data-table"><thead><tr><th>تاریخ</th><th>پیگیری</th><th>شرح</th><th>مبلغ</th><th>وضعیت</th></tr></thead><tbody>${reconRows}</tbody></table></div>
 </details>
 </div>`;
 }
@@ -433,26 +628,48 @@ async function inventoryReconciliationPanel():Promise<string>{
 }
 
 
-async function openCommercePanelSheet(section:'receipts'|'banking'|'management'|'inventory'):Promise<void> {
-  const titles:Record<string,string>={receipts:'دریافت / پرداخت',banking:'بانک',management:'سودآوری',inventory:'انبار'};
+async function openCommercePanelSheet(section:'sale'|'purchase'|'receipts'|'banking'|'management'|'inventory'|'parties'|'operating'):Promise<void> {
+  const titles:Record<string,string>={
+    sale:'فاکتور فروش',
+    purchase:'فاکتور خرید',
+    receipts:'دریافت / پرداخت',
+    banking:'بانک',
+    management:'سودآوری',
+    inventory:'انبار',
+    parties:'طرف حساب‌ها',
+    operating:'هزینه و درآمد',
+  };
   activeCommerceSection=section;
+  if(section==='sale'||section==='purchase'){
+    activeInvoiceType=section==='sale'?'sale':'purchase';
+  }
   editingInvoiceId=null;
+  suppressCommerceSheetReopen=true;
   await render();
+  suppressCommerceSheetReopen=false;
   const root=el<HTMLDivElement>('#accountingCommerceWorkspace');
-  const sectionEl=root?.querySelector<HTMLElement>(`[data-commerce-section="${section}"]`);
-  if(!sectionEl){activeCommerceSection=isSaleInvoiceType(activeInvoiceType)?'sale':'purchase';return;}
+  const sectionKey=(section==='sale'||section==='purchase')?'invoices':section;
+  const sectionEl=root?.querySelector<HTMLElement>(`[data-commerce-section="${sectionKey}"]`);
+  if(!sectionEl){activeCommerceSection='home';return;}
   document.getElementById('commercePanelSheet')?.remove();
   const overlay=document.createElement('div');
   overlay.id='commercePanelSheet';
+  overlay.className='accounting-module-sheet commerce-module-sheet';
+  overlay.style.zIndex='10070';
   overlay.dir='rtl';
-  overlay.style.cssText='position:fixed;inset:0;z-index:10050;background:var(--surface,#fff);color:var(--text,#222);overflow:auto;padding:clamp(12px,3vw,28px)';
-  overlay.innerHTML=`<div style="max-width:1100px;margin:0 auto"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px"><h2 style="margin:0">${titles[section]||'بازرگانی'}</h2><button type="button" class="btn btn-secondary" id="commercePanelClose">بازگشت</button></div><div id="commercePanelMount"></div></div>`;
+  overlay.innerHTML=`<div class="accounting-module-sheet-inner"><header class="accounting-module-sheet-head"><div><p class="accounting-module-sheet-kicker">بازرگانی</p><h2>${titles[section]||'بازرگانی'}</h2></div><button type="button" class="btn btn-secondary" id="commercePanelClose">بازگشت</button></header><div class="accounting-module-sheet-body" id="commercePanelMount"></div></div>`;
   document.body.appendChild(overlay);
+  document.body.classList.add('accounting-sheet-open');
   const mount=overlay.querySelector<HTMLElement>('#commercePanelMount')!;
   while(sectionEl.firstChild)mount.appendChild(sectionEl.firstChild);
   const close=()=>{
+    // return nodes so next render can rebuild cleanly
+    while(mount.firstChild)sectionEl.appendChild(mount.firstChild);
     overlay.remove();
-    activeCommerceSection=isSaleInvoiceType(activeInvoiceType)?'sale':'purchase';
+    if(!document.getElementById('accountingModuleSheet')){
+      document.body.classList.remove('accounting-sheet-open');
+    }
+    activeCommerceSection='home';
     render();
   };
   overlay.querySelector('#commercePanelClose')?.addEventListener('click',close);
@@ -464,7 +681,14 @@ function openInvoiceTypeSheet():void {
  overlay.innerHTML=`<div style="max-width:760px;margin:8vh auto"><div style="display:flex;justify-content:space-between;align-items:center"><h2>فاکتور</h2><button class="btn btn-secondary" id="invoiceTypeClose">بستن</button></div><div class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(190px,1fr));margin-top:16px"><button class="btn btn-primary" data-new-invoice-type="sale">فروش</button><button class="btn btn-primary" data-new-invoice-type="purchase">خرید</button><button class="btn btn-secondary" data-new-invoice-type="return-sale">برگشت از فروش</button><button class="btn btn-secondary" data-new-invoice-type="return-purchase">برگشت از خرید</button><button class="btn btn-secondary" data-new-invoice-type="proforma">پیش‌فاکتور</button></div></div>`;
  document.body.appendChild(overlay);
  overlay.querySelector('#invoiceTypeClose')!.addEventListener('click',()=>overlay.remove());
- overlay.querySelectorAll<HTMLButtonElement>('[data-new-invoice-type]').forEach(b=>b.addEventListener('click',()=>{const type=b.dataset.newInvoiceType as InvoiceType;if(!['sale','purchase','return-sale','return-purchase','proforma'].includes(type))return;activeInvoiceType=type;activeCommerceSection=isSaleInvoiceType(type)?'sale':'purchase';overlay.remove();editingInvoiceId=null;render().then(()=>el<HTMLElement>('#invoiceFormTitle')?.scrollIntoView({behavior:'smooth',block:'start'}));}));
+ overlay.querySelectorAll<HTMLButtonElement>('[data-new-invoice-type]').forEach(b=>b.addEventListener('click',()=>{
+  const type=b.dataset.newInvoiceType as InvoiceType;
+  if(!['sale','purchase','return-sale','return-purchase','proforma'].includes(type))return;
+  activeInvoiceType=type;
+  overlay.remove();
+  editingInvoiceId=null;
+  openCommercePanelSheet(isSaleInvoiceType(type)?'sale':'purchase');
+ }));
 }
 function openInvoiceItemsSheet():void {
  const placeholder=el<HTMLElement>('#invoiceItemsPlaceholder');if(!placeholder)return;
@@ -479,23 +703,38 @@ function openInvoiceItemsSheet():void {
 
 async function render():Promise<void> {
   const root=el<HTMLDivElement>('#accountingCommerceWorkspace'); if(!root||!commerce)return;
+  const reopenSheet=activeCommerceSection!=='home'?activeCommerceSection:null;
+  // drop previous nested sheet so nodes are not duplicated
+  document.getElementById('commercePanelSheet')?.remove();
+  if(!document.getElementById('accountingModuleSheet')){
+    document.body.classList.remove('accounting-sheet-open');
+  }
   root.setAttribute('dir','rtl');
   root.innerHTML=`
-  <div class="commerce-section-nav" role="tablist" aria-label="بخش‌های عملیات بازرگانی">
-    <button type="button" class="btn btn-primary" id="openInvoiceTypeSheet">فاکتور</button>
-    <button type="button" class="btn btn-secondary" data-commerce-tab="receipts">دریافت / پرداخت</button>
-    <button type="button" class="btn btn-secondary" data-commerce-tab="banking">بانک</button>
-    <button type="button" class="btn btn-secondary" data-commerce-tab="management">سودآوری</button>
-    <button type="button" class="btn btn-secondary" data-commerce-tab="inventory">انبار</button>
+  <div class="commerce-home" ${activeCommerceSection==='home'?'':'hidden'}>
+    <p class="hint">هر عملیات بازرگانی در برگه تمام‌صفحه جدا باز می‌شود.</p>
+    <div class="accounting-home-grid" role="navigation" aria-label="بخش‌های بازرگانی">
+      <button type="button" class="accounting-home-tile" id="openInvoiceTypeSheet"><span class="accounting-home-icon invoice" aria-hidden="true">🧾</span><strong>فاکتور</strong><span class="hint">فروش، خرید، برگشت و پیش‌فاکتور</span></button>
+      <button type="button" class="accounting-home-tile" data-commerce-tab="parties"><span class="accounting-home-icon party" aria-hidden="true">👤</span><strong>طرف حساب‌ها</strong><span class="hint">تعریف مشتری و تأمین‌کننده</span></button>
+      <button type="button" class="accounting-home-tile" data-commerce-tab="receipts"><span class="accounting-home-icon receipt" aria-hidden="true">💵</span><strong>دریافت / پرداخت</strong><span class="hint">نقد، کارت، چک و تخصیص</span></button>
+      <button type="button" class="accounting-home-tile" data-commerce-tab="banking"><span class="accounting-home-icon banking" aria-hidden="true">🏦</span><strong>بانک</strong><span class="hint">حساب بانکی و صورت‌حساب</span></button>
+      <button type="button" class="accounting-home-tile" data-commerce-tab="operating"><span class="accounting-home-icon expense" aria-hidden="true">📒</span><strong>هزینه و درآمد</strong><span class="hint">ثبت هزینه و درآمد متفرقه</span></button>
+      <button type="button" class="accounting-home-tile" data-commerce-tab="inventory"><span class="accounting-home-icon inventory" aria-hidden="true">📦</span><strong>انبار</strong><span class="hint">بهای موجودی و تطبیق</span></button>
+    </div>
   </div>
-  <section data-commerce-section="invoices">
+  <section data-commerce-section="invoices" ${activeCommerceSection==='sale'||activeCommerceSection==='purchase'?'':'hidden'}>
   <header class="commerce-page-header"><div><h2>${invoiceTypeTitle(activeInvoiceType)}</h2></div><span class="commerce-page-chip">${activeCommerceSection==='sale'?'فروش':'خرید'}</span></header>
   <div class="card commerce-invoice-card" style="margin-top:12px">
 <h3 id="invoiceFormTitle">${invoiceTypeTitle(activeInvoiceType)}</h3>
 <div class="form-grid invoice-header-grid">
 <input type="hidden" id="invoiceType" value="${activeInvoiceType}">
 <label class="field">شماره<input id="invoiceNumber" value="${esc(nextInvoiceNumber(activeInvoiceType))}" placeholder="شماره" autocomplete="off"></label>
-<label class="field">${isSaleInvoiceType(activeInvoiceType)?'خریدار':'فروشنده'}<select id="invoiceParty"><option value="">انتخاب</option>${partyOptions(isSaleInvoiceType(activeInvoiceType)?'customer':'supplier')}</select></label>
+<label class="field">${isSaleInvoiceType(activeInvoiceType)?'خریدار':'فروشنده'}
+<div style="display:flex;gap:6px;align-items:stretch">
+<select id="invoiceParty" style="flex:1"><option value="">انتخاب</option>${partyOptions(isSaleInvoiceType(activeInvoiceType)?'customer':'supplier')}</select>
+<button type="button" class="btn btn-sm btn-secondary" id="invoiceAddParty" title="اگر شخص در فهرست نیست، اینجا تعریف کنید">+ شخص</button>
+</div>
+</label>
 <label class="field">تاریخ<div class="invoice-jalali-date"><input id="invoiceDate" value="${todayJalali()}" placeholder="۱۴۰۵/۰۱/۰۱" autocomplete="off" inputmode="numeric"><button type="button" class="btn btn-secondary" id="invoiceJalaliCalendar" aria-label="تقویم" title="تقویم شمسی">▦</button></div><div id="invoiceJalaliCalendarPanel" class="invoice-jalali-calendar" hidden></div></label>
 <input type="hidden" id="invoicePaymentTerms" value=""><select hidden aria-hidden="true"></select><input type="hidden" id="invoiceDescription">
 </div>
@@ -573,23 +812,24 @@ async function render():Promise<void> {
 <div class="table-wrap" style="margin-top:14px"><table class="data-table"><thead><tr><th>شماره</th><th>نوع</th><th>طرف</th><th>تاریخ</th><th>مبلغ</th><th>وضعیت</th><th></th></tr></thead><tbody>${cashRows()}</tbody></table></div>
 </div>
   </section>
+  <section data-commerce-section="parties" ${activeCommerceSection==='parties'?'':'hidden'}>${activeCommerceSection==='parties'?partiesPanelHtml():''}</section>
+  <section data-commerce-section="operating" ${activeCommerceSection==='operating'?'':'hidden'}>${activeCommerceSection==='operating'?await operatingPanelHtml():''}</section>
   <section data-commerce-section="cheques" ${activeCommerceSection==='cheques'?'':'hidden'}>${activeCommerceSection==='cheques'?await chequePanel():''}</section>
   <section data-commerce-section="aging" ${activeCommerceSection==='aging'?'':'hidden'}>${activeCommerceSection==='aging'?await agingPanel():''}</section>
   <section data-commerce-section="banking" ${activeCommerceSection==='banking'?'':'hidden'}>${activeCommerceSection==='banking'?await bankPanel():''}</section>`;
   const itemPlaceholder=root.querySelector<HTMLElement>('#invoiceItemsPlaceholder');
   if(itemPlaceholder){['.commerce-lines-head','.invoice-product-tools','#commerceInvoiceLines','#invoiceAddLine'].forEach(sel=>{const node=root.querySelector<HTMLElement>(sel);if(node)itemPlaceholder.appendChild(node);});}
   root.querySelectorAll<HTMLButtonElement>('[data-commerce-tab]').forEach(button=>button.addEventListener('click',()=>{
-    const next=button.dataset.commerceTab as 'sale'|'purchase'|'receipts'|'banking'|'management'|'inventory';
-    if(next==='sale'||next==='purchase'){
-      activeInvoiceType=next;
-      activeCommerceSection=next;
-      editingInvoiceId=null;
-      render();
-      return;
-    }
+    const next=button.dataset.commerceTab as 'sale'|'purchase'|'receipts'|'banking'|'management'|'inventory'|'parties'|'operating';
     openCommercePanelSheet(next);
   }));
-  addInvoiceLine(); addInvoicePaymentRow(); bind();
+  if(activeCommerceSection==='sale'||activeCommerceSection==='purchase'){
+    addInvoiceLine(); addInvoicePaymentRow();
+  }
+  bind();
+  if(!suppressCommerceSheetReopen && reopenSheet && reopenSheet!=='home'){
+    await openCommercePanelSheet(reopenSheet as 'sale'|'purchase'|'receipts'|'banking'|'management'|'inventory'|'parties'|'operating');
+  }
 }
 async function persist(next:CommerceData):Promise<void>{commerce=next;await saveCommerceData(next);render()}
 function refreshAccounting():void{window.dispatchEvent(new Event('accounting:data-updated'))}
@@ -641,10 +881,96 @@ function bind():void {
   el<HTMLButtonElement>('#profitabilityPrintPdf')?.addEventListener('click',async()=>{try{await printProfitabilityPdf(profitabilityFilter)}catch(e){toast(e instanceof Error?e.message:'آماده‌سازی PDF ناموفق بود','error')}});
   el<HTMLButtonElement>('#bankTransferSave')?.addEventListener('click',async()=>{try{await createInternalTransfer({number:el<HTMLInputElement>('#bankTransferNo')!.value,date:digits(el<HTMLInputElement>('#bankTransferDate')!.value),fiscalPeriodId:await activeFiscalPeriodId(),fromAccountId:el<HTMLSelectElement>('#bankTransferFrom')!.value,toAccountId:el<HTMLSelectElement>('#bankTransferTo')!.value,amountRial:parseMoneyToRial(digits(el<HTMLInputElement>('#bankTransferAmount')!.value),currency),feeRial:parseMoneyToRial(digits(el<HTMLInputElement>('#bankTransferFee')!.value||'0'),currency),feeAccountId:el<HTMLSelectElement>('#bankTransferFeeAccount')!.value,description:el<HTMLInputElement>('#bankTransferDescription')!.value});await render();refreshAccounting();toast('انتقال بین حساب‌ها و سند حسابداری ثبت شد','success')}catch(e){toast(e instanceof Error?e.message:'خطا در ثبت انتقال','error')}});
   el<HTMLButtonElement>('#bankStatementImport')?.addEventListener('click',async()=>{try{const file=el<HTMLInputElement>('#bankStatementFile')?.files?.[0];if(!file)throw new Error('ابتدا فایل CSV را انتخاب کنید.');const accountId=el<HTMLSelectElement>('#bankStatementAccount')!.value;const rows=parseBankStatementCsv(await file.text(),accountId);const result=await importBankStatement(rows);await render();toast(`${result.imported} ردیف وارد شد؛ ${result.matched} ردیف به‌صورت خودکار تطبیق یافت.`,'success')}catch(e){toast(e instanceof Error?e.message:'خطا در ورود صورت‌حساب','error')}});
+  el<HTMLButtonElement>('#bankMoveSave')?.addEventListener('click',async()=>{
+    try{
+      const kind=(el<HTMLSelectElement>('#bankMoveKind')?.value||'deposit') as 'deposit'|'withdraw';
+      await createCashBankMove({
+        kind,
+        number:el<HTMLInputElement>('#bankMoveNo')?.value||String(Date.now()).slice(-6),
+        date:digits(el<HTMLInputElement>('#bankMoveDate')?.value||''),
+        fiscalPeriodId:await activeFiscalPeriodId(),
+        cashAccountId:el<HTMLSelectElement>('#bankMoveCash')?.value||'',
+        bankAccountId:el<HTMLSelectElement>('#bankMoveBank')?.value||'',
+        amountRial:parseMoneyToRial(digits(el<HTMLInputElement>('#bankMoveAmount')?.value||'0'),currency),
+        description:el<HTMLInputElement>('#bankMoveDesc')?.value||'',
+      });
+      await render();refreshAccounting();
+      toast(kind==='deposit'?'واریز نقد به بانک ثبت شد.':'برداشت از بانک به صندوق ثبت شد.','success');
+    }catch(e){toast(e instanceof Error?e.message:'خطا در ثبت واریز/برداشت','error')}
+  });
+  el<HTMLButtonElement>('#bankFeeSave')?.addEventListener('click',async()=>{
+    try{
+      await createBankFee({
+        number:el<HTMLInputElement>('#bankFeeNo')?.value||String(Date.now()).slice(-6),
+        date:digits(el<HTMLInputElement>('#bankFeeDate')?.value||''),
+        fiscalPeriodId:await activeFiscalPeriodId(),
+        bankAccountId:el<HTMLSelectElement>('#bankFeeBank')?.value||'',
+        feeAccountId:el<HTMLSelectElement>('#bankFeeExpense')?.value||'',
+        amountRial:parseMoneyToRial(digits(el<HTMLInputElement>('#bankFeeAmount')?.value||'0'),currency),
+        description:el<HTMLInputElement>('#bankFeeDesc')?.value||'',
+      });
+      await render();refreshAccounting();
+      toast('کارمزد بانکی ثبت و سند صادر شد.','success');
+    }catch(e){toast(e instanceof Error?e.message:'خطا در ثبت کارمزد','error')}
+  });
+  el<HTMLButtonElement>('#bankLedgerLoad')?.addEventListener('click',async()=>{
+    try{
+      const accountId=el<HTMLSelectElement>('#bankLedgerAccount')?.value||'';
+      if(!accountId)throw new Error('حساب را انتخاب کنید.');
+      const rows=await getBankAccountLedger(accountId);
+      const body=el<HTMLElement>('#bankLedgerBody');
+      if(!body)return;
+      body.innerHTML=rows.slice(-120).reverse().map(r=>`<tr><td>${esc(r.date)}</td><td>${esc(r.number)}</td><td>${esc(r.description)}</td><td>${money(r.debitRial)}</td><td>${money(r.creditRial)}</td><td>${money(r.balanceRial)}</td></tr>`).join('')
+        ||'<tr><td colspan="6">گردشی برای این حساب ثبت نشده است.</td></tr>';
+    }catch(e){toast(e instanceof Error?e.message:'خطا در بارگذاری دفتر','error')}
+  });
 
   el<HTMLButtonElement>('#openingCostSave')?.addEventListener('click',async()=>{try{const p=products.find(x=>x.id===el<HTMLSelectElement>('#openingCostProduct')!.value);if(!p)throw new Error('کالا را انتخاب کنید.');const qty=Number(digits(el<HTMLInputElement>('#openingCostQty')!.value).replace(',','.'));if(!Number.isFinite(qty)||qty<=0)throw new Error('تعداد موجودی معتبر نیست.');if(Math.abs(qty-(Number(p.systemQty)||0))>0.000001)throw new Error('تعداد باید با موجودی فعلی کالا در انبار برابر باشد.');const warehouse=p.warehouse||'انبار اصلی';const costing=await loadInventoryCostData();setOpeningStockCost(costing,{productId:p.id,warehouse,qtyMilli:Math.round(qty*1000),unitCostRial:parseMoneyToRial(digits(el<HTMLInputElement>('#openingCostUnit')!.value),currency),date:digits(el<HTMLInputElement>('#openingCostDate')!.value)});await saveInventoryCostData(costing);logAudit('accounting_opening_stock_valued',{productId:p.id,warehouse,qty,unitCostRial:parseMoneyToRial(digits(el<HTMLInputElement>('#openingCostUnit')!.value),currency)});toast('بهای موجودی اولیه ثبت شد','success')}catch(e){toast(e instanceof Error?e.message:'خطا در ارزش‌گذاری موجودی','error')}});
   el<HTMLButtonElement>('#openInvoiceTypeSheet')?.addEventListener('click',openInvoiceTypeSheet);
+  el<HTMLSelectElement>('#opKind')?.addEventListener('change',()=>{
+    const kind=el<HTMLSelectElement>('#opKind')!.value;
+    const exp=el<HTMLElement>('#opAccountExpenseWrap');
+    const inc=el<HTMLElement>('#opAccountIncomeWrap');
+    if(exp)exp.hidden=kind!=='expense';
+    if(inc)inc.hidden=kind!=='income';
+  });
+  el<HTMLButtonElement>('#opSave')?.addEventListener('click',async()=>{
+    try{
+      const kind=(el<HTMLSelectElement>('#opKind')?.value||'expense') as 'expense'|'income';
+      const operatingAccountId=kind==='expense'
+        ?(el<HTMLSelectElement>('#opExpenseAccount')?.value||'')
+        :(el<HTMLSelectElement>('#opIncomeAccount')?.value||'');
+      const cashAccountId=el<HTMLSelectElement>('#opCashAccount')?.value||'';
+      const amountRial=parseMoneyToRial(digits(el<HTMLInputElement>('#opAmount')?.value||'0'),currency);
+      const date=digits(el<HTMLInputElement>('#opDate')?.value||'');
+      const fiscalPeriodId=el<HTMLSelectElement>('#opPeriod')?.value||await activeFiscalPeriodId();
+      const description=el<HTMLInputElement>('#opDescription')?.value||'';
+      const partyId=el<HTMLSelectElement>('#opParty')?.value||undefined;
+      if(!operatingAccountId)throw new Error(kind==='expense'?'حساب هزینه را انتخاب کنید.':'حساب درآمد را انتخاب کنید.');
+      if(!cashAccountId)throw new Error('حساب صندوق یا بانک را انتخاب کنید.');
+      await recordOperatingEntry({kind,date,fiscalPeriodId,amountRial,operatingAccountId,cashAccountId,description,partyId});
+      logAudit('operating_entry',{kind,amountRial,operatingAccountId,cashAccountId});
+      refreshAccounting();
+      await render();
+      toast(kind==='expense'?'هزینه ثبت و سند حسابداری صادر شد.':'درآمد ثبت و سند حسابداری صادر شد.','success');
+    }catch(e){toast(e instanceof Error?e.message:'خطا در ثبت هزینه/درآمد','error')}
+  });
   el<HTMLButtonElement>('#invoiceOpenItems')?.addEventListener('click',openInvoiceItemsSheet);
+  el<HTMLButtonElement>('#invoiceAddParty')?.addEventListener('click',()=>{
+    openPartyFormSheet({
+      preferType:isSaleInvoiceType(activeInvoiceType)?'customer':'supplier',
+      selectAfterSave:true,
+    });
+  });
+  el<HTMLButtonElement>('#partySaveBtn')?.addEventListener('click',async()=>{
+    const saved=await savePartyFromForm(false);
+    if(saved)await render();
+  });
+  el<HTMLButtonElement>('#partyResetBtn')?.addEventListener('click',()=>{editingPartyId=null;render();});
+  document.querySelectorAll<HTMLButtonElement>('[data-edit-party]').forEach(btn=>btn.addEventListener('click',()=>{
+    editingPartyId=btn.dataset.editParty||null;
+    render().then(()=>el<HTMLElement>('#partyFormGrid')?.scrollIntoView({behavior:'smooth',block:'start'}));
+  }));
   el<HTMLInputElement>('#invoiceDescriptionVisible')?.addEventListener('input',event=>{const hidden=el<HTMLInputElement>('#invoiceDescription');if(hidden)hidden.value=(event.target as HTMLInputElement).value;});
   el<HTMLButtonElement>('#invoiceAddLine')?.addEventListener('click',()=>addInvoiceLine());
   const previousInvoiceScanHandler=(window as any).__anbarinInvoiceBarcodeHandler as EventListener|undefined;

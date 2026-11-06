@@ -475,10 +475,10 @@ function renderShell() {
       <section class="page" id="page-accounting">
         <div class="card">
           <h2>حسابداری حرفه‌ای</h2>
-          <p class="hint">هسته حسابداری ایران — کدینگ قابل ویرایش، سال مالی شمسی و اسناد دوطرفه. مبالغ در پایگاه داده به ریال ذخیره می‌شوند.</p>
+          <p class="hint">بازرگانی، اسناد، کدینگ و گزارش‌ها هر کدام در برگه تمام‌صفحه جدا باز می‌شوند. مبالغ در پایگاه داده به ریال ذخیره می‌شوند.</p>
           <div id="accountingWorkspace"><p class="hint">در حال بارگذاری حسابداری...</p></div>
-          <div id="accountingCommerceWorkspace"><p class="hint">در حال بارگذاری فاکتورها و دریافت‌وپرداخت...</p></div>
-          <div id="accountingReportsWorkspace"><p class="hint">در حال بارگذاری گزارش‌های مالی...</p></div>
+          <div id="accountingCommerceWorkspace" hidden><p class="hint">در حال بارگذاری فاکتورها و دریافت‌وپرداخت...</p></div>
+          <div id="accountingReportsWorkspace" hidden><p class="hint">در حال بارگذاری گزارش‌های مالی...</p></div>
         </div>
       </section>
 
