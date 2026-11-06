@@ -32,7 +32,9 @@ let editingInvoiceId: string | null = null;
 let profitabilityFilter:ProfitabilityFilter={};
 let managementFilter:ProfitabilityFilter={};
 let currency: 'rial'|'toman' = 'toman';
-let activeCommerceSection: 'home'|'sale'|'purchase'|'receipts'|'cheques'|'aging'|'banking'|'management'|'inventory'|'parties'|'operating' = 'home';
+type CommerceSection = 'home'|'sale'|'purchase'|'receipts'|'cheques'|'aging'|'banking'|'management'|'inventory'|'parties'|'operating';
+type CommercePanelSection = Exclude<CommerceSection, 'home'>;
+let activeCommerceSection: CommerceSection = 'home';
 let activeInvoiceType: InvoiceType = 'sale';
 let editingPartyId: string | null = null;
 let suppressCommerceSheetReopen = false;
@@ -628,11 +630,13 @@ async function inventoryReconciliationPanel():Promise<string>{
 }
 
 
-async function openCommercePanelSheet(section:'sale'|'purchase'|'receipts'|'banking'|'management'|'inventory'|'parties'|'operating'):Promise<void> {
-  const titles:Record<string,string>={
+async function openCommercePanelSheet(section:CommercePanelSection):Promise<void> {
+  const titles:Record<CommercePanelSection,string>={
     sale:'فاکتور فروش',
     purchase:'فاکتور خرید',
     receipts:'دریافت / پرداخت',
+    cheques:'چک‌ها',
+    aging:'سررسید',
     banking:'بانک',
     management:'سودآوری',
     inventory:'انبار',
@@ -703,7 +707,7 @@ function openInvoiceItemsSheet():void {
 
 async function render():Promise<void> {
   const root=el<HTMLDivElement>('#accountingCommerceWorkspace'); if(!root||!commerce)return;
-  const reopenSheet=activeCommerceSection!=='home'?activeCommerceSection:null;
+  const reopenSheet: CommercePanelSection | null = activeCommerceSection!=='home' ? activeCommerceSection : null;
   // drop previous nested sheet so nodes are not duplicated
   document.getElementById('commercePanelSheet')?.remove();
   if(!document.getElementById('accountingModuleSheet')){
@@ -820,15 +824,15 @@ async function render():Promise<void> {
   const itemPlaceholder=root.querySelector<HTMLElement>('#invoiceItemsPlaceholder');
   if(itemPlaceholder){['.commerce-lines-head','.invoice-product-tools','#commerceInvoiceLines','#invoiceAddLine'].forEach(sel=>{const node=root.querySelector<HTMLElement>(sel);if(node)itemPlaceholder.appendChild(node);});}
   root.querySelectorAll<HTMLButtonElement>('[data-commerce-tab]').forEach(button=>button.addEventListener('click',()=>{
-    const next=button.dataset.commerceTab as 'sale'|'purchase'|'receipts'|'banking'|'management'|'inventory'|'parties'|'operating';
-    openCommercePanelSheet(next);
+    const next=button.dataset.commerceTab as CommercePanelSection;
+    if(next) openCommercePanelSheet(next);
   }));
   if(activeCommerceSection==='sale'||activeCommerceSection==='purchase'){
     addInvoiceLine(); addInvoicePaymentRow();
   }
   bind();
-  if(!suppressCommerceSheetReopen && reopenSheet && reopenSheet!=='home'){
-    await openCommercePanelSheet(reopenSheet as 'sale'|'purchase'|'receipts'|'banking'|'management'|'inventory'|'parties'|'operating');
+  if(!suppressCommerceSheetReopen && reopenSheet){
+    await openCommercePanelSheet(reopenSheet);
   }
 }
 async function persist(next:CommerceData):Promise<void>{commerce=next;await saveCommerceData(next);render()}
