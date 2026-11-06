@@ -14,6 +14,7 @@ import {
   findProductByCode,
 } from './state';
 import { toast } from './ui';
+import { closeScanner } from './scanner';
 import { generateId, normalizeDigits } from '@/utils/helpers';
 import { canCount, guardLocked } from './count';
 import { guardPermission } from './filters-roles';
@@ -133,9 +134,11 @@ export function openProductModal(
 ): void {
   if (!guardPermission('inventory.edit', 'ویرایش کالا')) return;
 
+  // اسکنر را ببند تا مودال کالا دیده شود
+  try { closeScanner(); } catch { /* ignore */ }
   const modal = ensureModal();
-  // همیشه روی همه لایه‌ها باشد (فاکتور / اقلام)
-  modal.style.zIndex = '10200';
+  // بالاتر از برگه فاکتور و اسکنر
+  modal.style.zIndex = '10400';
   const title = document.getElementById('productModalTitle');
   const delBtn = document.getElementById('productDelete') as HTMLButtonElement | null;
 

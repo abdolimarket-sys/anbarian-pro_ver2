@@ -8,7 +8,7 @@ import {
 } from './accounting-commerce';
 import { toast } from './ui';
 import { openProductModal, offerAddProduct } from './products-ui';
-import { enhanceDateFields, todayJalali as sharedTodayJalali } from './date-picker';
+import { enhanceDateFields, attachJalaliCalendar, todayJalali as sharedTodayJalali } from './date-picker';
 import { products, logAudit, findProductByCode } from './state';
 import { openScanner } from './scanner';
 import { loadInventoryCostData, saveInventoryCostData, setOpeningStockCost } from './inventory-costing';
@@ -708,6 +708,19 @@ async function openCommercePanelSheet(section:CommercePanelSection):Promise<void
     render();
   };
   overlay.querySelector('#commercePanelClose')?.addEventListener('click',close);
+  // تقویم و جستجوی کالا پس از انتقال به برگه
+  queueMicrotask(() => {
+    const invDate = overlay.querySelector<HTMLInputElement>('#invoiceDate') || el<HTMLInputElement>('#invoiceDate');
+    if (invDate) {
+      const btn = overlay.querySelector<HTMLButtonElement>('#invoiceJalaliCalendar') || el<HTMLButtonElement>('#invoiceJalaliCalendar');
+      const panel = overlay.querySelector<HTMLDivElement>('#invoiceJalaliCalendarPanel') || el<HTMLDivElement>('#invoiceJalaliCalendarPanel');
+      if (btn) delete (btn as HTMLButtonElement).dataset.calBound;
+      delete invDate.dataset.calendarEnhanced;
+      attachJalaliCalendar(invDate, btn, panel);
+    }
+    enhanceDateFields(overlay);
+  });
+
 }
 
 function openInvoiceTypeSheet():void {
@@ -726,112 +739,194 @@ function openInvoiceTypeSheet():void {
  }));
 }
 function bindInvoiceProductSearch(root:ParentNode=document):void {
-  const searchInput=root.querySelector<HTMLInputElement>('#invoiceProductSearch');
-  const addBtn=root.querySelector<HTMLButtonElement>('#invoiceProductAdd');
-  const scanBtn=root.querySelector<HTMLButtonElement>('#invoiceScanOpen');
-  const addLineBtn=root.querySelector<HTMLButtonElement>('#invoiceAddLine');
-  if(!searchInput && !addBtn) return;
-  let suggestionIndex=0;
-  const addBySearch=()=>{
-    const value=(searchInput?.value||'').trim();
-    if(!value){toast('نام کالا یا بارکد را وارد کنید.','error');return;}
-    const byCode=findProductByCode(digits(value));
-    const product=byCode||resolveInvoiceProduct(value);
-    if(!product){
-      const looksLikeBarcode=/^[0-9۰-۹٠-٩\-\s]{4,}$/.test(value);
-      offerAddProduct(value,{
-        asName:!looksLikeBarcode,
-        onSaved:(productId)=>{
-          addProductToInvoice(productId,true);
-          const status=root.querySelector<HTMLElement>('#invoiceScanStatus')||el<HTMLElement>('#invoiceScanStatus');
-          const p=products.find(x=>x.id===productId);
-          if(status)status.textContent=p?`✓ ${p.name} اضافه و به فاکتور درج شد`:'کالا به فاکتور اضافه شد';
-          const box=root.querySelector<HTMLDivElement>('#invoiceProductSuggestions')||el<HTMLDivElement>('#invoiceProductSuggestions');
-          if(box)box.hidden=true;
-          // برگشت به برگه اقلام/فاکتور — مودال خودش بسته شده
-          const search=root.querySelector<HTMLInputElement>('#invoiceProductSearch')||el<HTMLInputElement>('#invoiceProductSearch');
-          if(search){search.value='';search.focus({preventScroll:true});}
-          toast('کالا تعریف شد و به اقلام فاکتور اضافه شد.','success');
+  const scope = root instanceof Element ? root : document;
+  const searchInput = scope.querySelector<HTMLInputElement>('#invoiceProductSearch') || el<HTMLInputElement>('#invoiceProductSearch');
+  const addBtn = scope.querySelector<HTMLButtonElement>('#invoiceProductAdd') || el<HTMLButtonElement>('#invoiceProductAdd');
+  const addLineBtn = scope.querySelector<HTMLButtonElement>('#invoiceAddLine') || el<HTMLButtonElement>('#invoiceAddLine');
+  const scanBtn = scope.querySelector<HTMLButtonElement>('#invoiceScanOpen') || el<HTMLButtonElement>('#invoiceScanOpen');
+  const suggestions = scope.querySelector<HTMLDivElement>('#invoiceProductSuggestions') || el<HTMLDivElement>('#invoiceProductSuggestions');
+  if (!searchInput) return;
+
+  // جلوگیری از دوباره‌اتصال با پرچم
+  if (searchInput.dataset.searchBound === '1') {
+    // فقط اگر قبلاً به همین نود وصل شده، رد شو — بعد از انتقال DOM پرچم را پاک می‌کنیم
+  }
+  searchInput.dataset.searchBound = '1';
+
+  let suggestionIndex = 0;
+
+  const hideSuggestions = () => {
+    const box = scope.querySelector<HTMLDivElement>('#invoiceProductSuggestions') || el<HTMLDivElement>('#invoiceProductSuggestions');
+    if (box) { box.hidden = true; box.innerHTML = ''; }
+  };
+
+  const showSuggestions = (value: string) => {
+    const host = scope.querySelector<HTMLDivElement>('#invoiceProductSuggestions') || el<HTMLDivElement>('#invoiceProductSuggestions');
+    if (!host) return;
+    const matches = invoiceProductMatches(value);
+    if (!matches.length) {
+      host.innerHTML = value.trim()
+        ? `<button type="button" class="invoice-product-suggestion" data-invoice-product-create="1"><span><b>کالا پیدا نشد</b><small>برای تعریف «${esc(value.trim())}» کلیک کنید</small></span></button>`
+        : '';
+      host.hidden = !value.trim();
+      host.querySelectorAll('[data-invoice-product-create]').forEach(b => b.addEventListener('click', () => {
+        hideSuggestions();
+        addBySearch();
+      }));
+      return;
+    }
+    host.innerHTML = matches.map((p, i) =>
+      `<button type="button" class="invoice-product-suggestion ${i === suggestionIndex ? 'active' : ''}" role="option" data-invoice-product-choice="${esc(p.id)}">` +
+      `<span><b>${esc(p.name)}</b><small>${esc(p.code || p.sku || 'بدون کد')} · ${esc(p.unit || 'عدد')}</small></span>` +
+      `<span class="suggestion-stock">موجودی ${fa(Number(p.systemQty) || 0)}</span></button>`
+    ).join('');
+    host.hidden = false;
+    host.querySelectorAll<HTMLButtonElement>('[data-invoice-product-choice]').forEach(b => {
+      b.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        const id = b.dataset.invoiceProductChoice;
+        if (id) {
+          addProductToInvoice(id, true);
+          hideSuggestions();
+          searchInput.value = '';
+          searchInput.focus({ preventScroll: true });
+        }
+      });
+    });
+  };
+
+  const addBySearch = () => {
+    const value = (searchInput.value || '').trim();
+    if (!value) { toast('نام کالا یا بارکد را وارد کنید.', 'error'); return; }
+    const byCode = findProductByCode(digits(value));
+    const product = byCode || resolveInvoiceProduct(value);
+    if (!product) {
+      const looksLikeBarcode = /^[0-9۰-۹٠-٩\-\s]{4,}$/.test(value);
+      offerAddProduct(value, {
+        asName: !looksLikeBarcode,
+        onSaved: (productId) => {
+          addProductToInvoice(productId, true);
+          searchInput.value = '';
+          hideSuggestions();
+          toast('کالا تعریف شد و به اقلام فاکتور اضافه شد.', 'success');
         },
       });
       return;
     }
-    addProductToInvoice(product.id,true);
-    const suggestions=root.querySelector<HTMLDivElement>('#invoiceProductSuggestions')||el<HTMLDivElement>('#invoiceProductSuggestions');
-    if(suggestions)suggestions.hidden=true;
-    const status=root.querySelector<HTMLElement>('#invoiceScanStatus')||el<HTMLElement>('#invoiceScanStatus');
-    if(status)status.textContent=`✓ ${product.name} اضافه شد`;
+    addProductToInvoice(product.id, true);
+    searchInput.value = '';
+    hideSuggestions();
+    const status = scope.querySelector<HTMLElement>('#invoiceScanStatus') || el<HTMLElement>('#invoiceScanStatus');
+    if (status) status.textContent = `✓ ${product.name} اضافه شد`;
   };
-  // جلوگیری از دوبار بستن با clone و جایگزینی برای پاک‌سازی لیسنرهای قبلی
-  const rebindClick=(node:HTMLElement|null, handler:()=>void)=>{
-    if(!node)return;
-    const next=node.cloneNode(true) as HTMLElement;
-    node.parentNode?.replaceChild(next,node);
-    next.addEventListener('click',handler);
-    return next;
+
+  // حذف لیسنر قبلی با clone فقط برای خود دکمه‌ها اگر لازم باشد — به‌جای آن onclick مستقیم
+  searchInput.oninput = () => {
+    suggestionIndex = 0;
+    showSuggestions(searchInput.value);
   };
-  const freshAdd=rebindClick(addBtn,addBySearch) as HTMLButtonElement|undefined;
-  rebindClick(addLineBtn,()=>addInvoiceLine());
-  const freshSearch=(()=>{
-    if(!searchInput)return null;
-    const next=searchInput.cloneNode(true) as HTMLInputElement;
-    searchInput.parentNode?.replaceChild(next,searchInput);
-    next.addEventListener('input',()=>{suggestionIndex=0;renderInvoiceProductSuggestions(next.value,suggestionIndex)});
-    next.addEventListener('keydown',event=>{
-      const matches=invoiceProductMatches(next.value);
-      if(event.key==='ArrowDown'&&matches.length){event.preventDefault();suggestionIndex=Math.min(matches.length-1,suggestionIndex+1);renderInvoiceProductSuggestions(next.value,suggestionIndex)}
-      else if(event.key==='ArrowUp'&&matches.length){event.preventDefault();suggestionIndex=Math.max(0,suggestionIndex-1);renderInvoiceProductSuggestions(next.value,suggestionIndex)}
-      else if(event.key==='Enter'){event.preventDefault();const chosen=matches[suggestionIndex]||resolveInvoiceProduct(next.value);if(chosen)addProductToInvoice(chosen.id);else addBySearch();const box=el<HTMLDivElement>('#invoiceProductSuggestions');if(box)box.hidden=true;}
-      else if(event.key==='Escape'){const box=el<HTMLDivElement>('#invoiceProductSuggestions');if(box)box.hidden=true;}
-    });
-    next.addEventListener('focus',()=>{if(next.value.trim())renderInvoiceProductSuggestions(next.value,suggestionIndex)});
-    return next;
-  })();
-  rebindClick(scanBtn,()=>{
-    const continuous=el<HTMLInputElement>('#scannerContinuous');
-    (window as any).__anbarinScannerContinuousBeforeInvoice=continuous?.checked??true;
-    if(continuous)continuous.checked=true;
-    (window as any).__anbarinInvoiceScanActive=true;
-    openScanner({title:'اسکن پیوسته بارکد کالا برای فاکتور'});
-  });
-  // hint for empty catalog
-  if(!products.length){
-    const status=root.querySelector<HTMLElement>('#invoiceScanStatus')||el<HTMLElement>('#invoiceScanStatus');
-    if(status)status.textContent='کالایی در سیستم نیست؛ ابتدا در بخش کالاها تعریف کنید.';
+  searchInput.onkeydown = (event: KeyboardEvent) => {
+    const matches = invoiceProductMatches(searchInput.value);
+    if (event.key === 'ArrowDown' && matches.length) {
+      event.preventDefault();
+      suggestionIndex = Math.min(matches.length - 1, suggestionIndex + 1);
+      showSuggestions(searchInput.value);
+    } else if (event.key === 'ArrowUp' && matches.length) {
+      event.preventDefault();
+      suggestionIndex = Math.max(0, suggestionIndex - 1);
+      showSuggestions(searchInput.value);
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      const chosen = matches[suggestionIndex] || resolveInvoiceProduct(searchInput.value);
+      if (chosen) {
+        addProductToInvoice(chosen.id, true);
+        searchInput.value = '';
+        hideSuggestions();
+      } else {
+        addBySearch();
+      }
+    } else if (event.key === 'Escape') {
+      hideSuggestions();
+    }
+  };
+  searchInput.onfocus = () => {
+    if (searchInput.value.trim()) showSuggestions(searchInput.value);
+  };
+
+  if (addBtn) {
+    addBtn.onclick = (ev) => {
+      ev.preventDefault();
+      addBySearch();
+    };
   }
-  void freshAdd; void freshSearch;
+  if (addLineBtn) {
+    addLineBtn.onclick = (ev) => {
+      ev.preventDefault();
+      addInvoiceLine();
+    };
+  }
+  if (scanBtn) {
+    scanBtn.onclick = () => {
+      const continuous = el<HTMLInputElement>('#scannerContinuous');
+      (window as any).__anbarinScannerContinuousBeforeInvoice = continuous?.checked ?? true;
+      if (continuous) continuous.checked = true;
+      (window as any).__anbarinInvoiceScanActive = true;
+      openScanner({ title: 'اسکن پیوسته بارکد کالا برای فاکتور' });
+    };
+  }
+
+  if (!products.length) {
+    const status = scope.querySelector<HTMLElement>('#invoiceScanStatus') || el<HTMLElement>('#invoiceScanStatus');
+    if (status) status.textContent = 'کالایی در سیستم نیست؛ ابتدا در بخش کالاها تعریف کنید یا نام جدید بزنید و افزودن کنید.';
+  }
 }
 
 function openInvoiceItemsSheet():void {
-  const scope=document.getElementById('commercePanelSheet')||document.getElementById('accountingCommerceWorkspace')||document;
-  const placeholder=(scope.querySelector('#invoiceItemsPlaceholder')||document.querySelector('#invoiceItemsPlaceholder')) as HTMLElement|null;
-  if(!placeholder){toast('فرم فاکتور هنوز آماده نیست.','error');return;}
+  const scope = document.getElementById('commercePanelSheet') || document.getElementById('accountingCommerceWorkspace') || document;
+  const placeholder = (scope.querySelector('#invoiceItemsPlaceholder') || document.querySelector('#invoiceItemsPlaceholder')) as HTMLElement | null;
+  if (!placeholder) { toast('فرم فاکتور هنوز آماده نیست.', 'error'); return; }
   document.getElementById('invoiceItemsSheet')?.remove();
-  const overlay=document.createElement('div');
-  overlay.id='invoiceItemsSheet';
-  overlay.dir='rtl';
-  overlay.style.cssText='position:fixed;inset:0;z-index:10120;background:var(--surface,#fff);color:var(--text,#222);overflow:auto;padding:clamp(12px,3vw,28px)';
-  overlay.innerHTML=`<div style="max-width:1100px;margin:0 auto"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2>اقلام فاکتور</h2><button class="btn btn-primary" id="invoiceItemsBack">تأیید و بازگشت</button></div><div id="invoiceItemsMount" style="margin-top:14px"></div></div>`;
+  const overlay = document.createElement('div');
+  overlay.id = 'invoiceItemsSheet';
+  overlay.dir = 'rtl';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:10120;background:var(--surface,#fff);color:var(--text,#222);overflow:auto;padding:clamp(12px,3vw,28px)';
+  overlay.innerHTML = `<div style="max-width:1100px;margin:0 auto"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2>اقلام فاکتور</h2><button class="btn btn-primary" id="invoiceItemsBack">تأیید و بازگشت</button></div><div id="invoiceItemsMount" style="margin-top:14px"></div></div>`;
   document.body.appendChild(overlay);
-  const mount=overlay.querySelector<HTMLElement>('#invoiceItemsMount')!;
-  const pick=(sel:string)=> (scope.querySelector(sel)||document.querySelector(sel)) as HTMLElement|null;
-  ['.commerce-lines-head','.invoice-product-tools','#commerceInvoiceLines','#invoiceAddLine'].forEach(sel=>{const node=pick(sel);if(node)mount.appendChild(node);});
-  if(!mount.querySelector('#commerceInvoiceLines .commerce-line')){
+  const mount = overlay.querySelector<HTMLElement>('#invoiceItemsMount')!;
+  const pick = (sel: string) => (scope.querySelector(sel) || document.querySelector(sel)) as HTMLElement | null;
+  ['.commerce-lines-head', '.invoice-product-tools', '#commerceInvoiceLines', '#invoiceAddLine'].forEach(sel => {
+    const node = pick(sel);
+    if (node) mount.appendChild(node);
+  });
+  // پرچم جستجو را پاک کن تا دوباره وصل شود
+  const search = mount.querySelector<HTMLInputElement>('#invoiceProductSearch');
+  if (search) delete search.dataset.searchBound;
+
+  if (!mount.querySelector('#commerceInvoiceLines .commerce-line')) {
     addInvoiceLine();
   }
-  // اتصال مجدد جستجوی هوشمند روی گره‌های منتقل‌شده
+
   bindInvoiceProductSearch(mount);
-  const search=mount.querySelector<HTMLInputElement>('#invoiceProductSearch');
-  if(search){search.placeholder='نام کالا یا بارکد — جستجوی هوشمند';search.focus({preventScroll:true});}
-  overlay.querySelector('#invoiceItemsBack')!.addEventListener('click',()=>{
-    ['.commerce-lines-head','.invoice-product-tools','#commerceInvoiceLines','#invoiceAddLine'].forEach(sel=>{
-      const node=mount.querySelector<HTMLElement>(sel);if(node)placeholder.appendChild(node);
+
+  if (search) {
+    search.placeholder = 'نام کالا یا بارکد — جستجو کنید';
+    search.focus({ preventScroll: true });
+  }
+
+  overlay.querySelector('#invoiceItemsBack')!.addEventListener('click', () => {
+    ['.commerce-lines-head', '.invoice-product-tools', '#commerceInvoiceLines', '#invoiceAddLine'].forEach(sel => {
+      const node = mount.querySelector<HTMLElement>(sel);
+      if (node) placeholder.appendChild(node);
     });
+    // بعد از برگشت پرچم را پاک کن
+    const s = placeholder.querySelector<HTMLInputElement>('#invoiceProductSearch');
+    if (s) delete s.dataset.searchBound;
     overlay.remove();
     updateInvoiceTotals();
-    const count=document.querySelectorAll('#commerceInvoiceLines .commerce-line').length;
-    const summary=document.querySelector('#invoiceItemsSummary') as HTMLElement|null;
-    if(summary)summary.textContent=count?`${fa(count)} قلم`:'بدون قلم';
+    const count = document.querySelectorAll('#commerceInvoiceLines .commerce-line').length;
+    const summary = document.querySelector('#invoiceItemsSummary') as HTMLElement | null;
+    if (summary) summary.textContent = count ? `${fa(count)} قلم` : 'بدون قلم';
   });
 }
 
@@ -1109,72 +1204,41 @@ function bind():void {
   el<HTMLInputElement>('#invoiceDescriptionVisible')?.addEventListener('input',event=>{const hidden=el<HTMLInputElement>('#invoiceDescription');if(hidden)hidden.value=(event.target as HTMLInputElement).value;});
   const previousInvoiceScanHandler=(window as any).__anbarinInvoiceBarcodeHandler as EventListener|undefined;
   if(previousInvoiceScanHandler)window.removeEventListener('anbarin:invoice-barcode-scan',previousInvoiceScanHandler);
-  const invoiceScanHandler:EventListener=(event:Event)=>{const detail=(event as CustomEvent<{code:string}>).detail;const code=digits(detail?.code||'').trim();const product=findProductByCode(code);const status=el<HTMLElement>('#invoiceScanStatus');if(product){addProductToInvoice(product.id,true);if(status)status.textContent=`✓ ${product.name} اضافه شد`}else{if(status)status.textContent=`بارکد ${code} پیدا نشد`;offerAddProduct(code,{asName:false,onSaved:(productId)=>{addProductToInvoice(productId,true);const p=products.find(x=>x.id===productId);if(status)status.textContent=p?`✓ ${p.name} اضافه شد`:'کالا اضافه شد';}});}};
+  const invoiceScanHandler:EventListener=(event:Event)=>{
+    const detail=(event as CustomEvent<{code:string}>).detail;
+    const code=digits(detail?.code||'').trim();
+    if(!code)return;
+    const product=findProductByCode(code);
+    const status=el<HTMLElement>('#invoiceScanStatus')||document.querySelector<HTMLElement>('#invoiceScanStatus');
+    if(product){
+      addProductToInvoice(product.id,true);
+      if(status)status.textContent=`✓ ${product.name} اضافه شد`;
+      toast(`${product.name} به اقلام اضافه شد`,'success');
+    }else{
+      if(status)status.textContent=`بارکد ${code} پیدا نشد`;
+      offerAddProduct(code,{
+        asName:false,
+        onSaved:(productId)=>{
+          addProductToInvoice(productId,true);
+          const p=products.find(x=>x.id===productId);
+          if(status)status.textContent=p?`✓ ${p.name} اضافه شد`:'کالا اضافه شد';
+          toast(p?`${p.name} تعریف و به فاکتور اضافه شد`:'کالا به فاکتور اضافه شد','success');
+        },
+      });
+    }
+  };
   (window as any).__anbarinInvoiceBarcodeHandler=invoiceScanHandler;window.addEventListener('anbarin:invoice-barcode-scan',invoiceScanHandler);
   bindInvoiceProductSearch(document);
   document.addEventListener('click',event=>{if(!(event.target as HTMLElement).closest('.invoice-live-search')){const box=el<HTMLDivElement>('#invoiceProductSuggestions');if(box)box.hidden=true;}});
-  const invoiceDateInput=el<HTMLInputElement>('#invoiceDate');const invoiceCalendarPanel=el<HTMLDivElement>('#invoiceJalaliCalendarPanel');let calendarYear=Number(todayJalali().split('/')[0]),calendarMonth=Number(todayJalali().split('/')[1]);
-  const jalaliParts=(date:Date)=>{const p=new Intl.DateTimeFormat('en-US-u-ca-persian-nu-latn',{year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(date);return {y:Number(p.find(x=>x.type==='year')?.value),m:Number(p.find(x=>x.type==='month')?.value),d:Number(p.find(x=>x.type==='day')?.value)}};
-  const renderInvoiceJalaliCalendar=()=>{
-    if(!invoiceCalendarPanel||calendarMonth<1||calendarMonth>12)return;
-    // ابتدا روز اول سال شمسی را پیدا می‌کنیم؛ سپس با طول ماه‌های شمسی به ماه درخواستی می‌رسیم.
-    const yearProbe=new Date(calendarYear+621,2,20,12);
-    let yearStart:Date|null=null;
-    for(let i=-7;i<=7;i++){
-      const candidate=new Date(yearProbe);
-      candidate.setDate(candidate.getDate()+i);
-      const parts=jalaliParts(candidate);
-      if(parts.y===calendarYear&&parts.m===1&&parts.d===1){yearStart=candidate;break;}
-    }
-    if(!yearStart)return;
-    const monthOffset=calendarMonth<=6?(calendarMonth-1)*31:186+(calendarMonth-7)*30;
-    const first=new Date(yearStart);
-    first.setDate(first.getDate()+monthOffset);
-    const firstParts=jalaliParts(first);
-    if(firstParts.y!==calendarYear||firstParts.m!==calendarMonth||firstParts.d!==1)return;
-    const days:Date[]=[];
-    for(let i=0;i<32;i++){
-      const day=new Date(first);
-      day.setDate(day.getDate()+i);
-      const parts=jalaliParts(day);
-      if(parts.y!==calendarYear||parts.m!==calendarMonth)break;
-      days.push(day);
-    }
-    const offset=(first.getDay()+1)%7;
-    const names=['ش','ی','د','س','چ','پ','ج'];
-    const monthNames=['','فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
-    invoiceCalendarPanel.innerHTML=`<div class="jalali-cal-head"><button type="button" data-cal-prev aria-label="ماه قبل">‹</button><b>${monthNames[calendarMonth]} ${calendarYear}</b><button type="button" data-cal-next aria-label="ماه بعد">›</button></div><div class="jalali-cal-grid">${names.map(n=>`<span class="weekday">${n}</span>`).join('')}${Array.from({length:offset},()=>'<span></span>').join('')}${days.map(day=>{const parts=jalaliParts(day);return `<button type="button" data-jdate="${parts.y}/${String(parts.m).padStart(2,'0')}/${String(parts.d).padStart(2,'0')}">${parts.d}</button>`}).join('')}</div>`;
-    invoiceCalendarPanel.hidden=false;
-    invoiceCalendarPanel.querySelector('[data-cal-prev]')?.addEventListener('click',()=>{
-      calendarMonth--;
-      if(calendarMonth<1){calendarMonth=12;calendarYear--;}
-      renderInvoiceJalaliCalendar();
-    });
-    invoiceCalendarPanel.querySelector('[data-cal-next]')?.addEventListener('click',()=>{
-      calendarMonth++;
-      if(calendarMonth>12){calendarMonth=1;calendarYear++;}
-      renderInvoiceJalaliCalendar();
-    });
-    invoiceCalendarPanel.querySelectorAll<HTMLButtonElement>('[data-jdate]').forEach(button=>button.addEventListener('click',()=>{
-      if(invoiceDateInput){
-        invoiceDateInput.value=button.dataset.jdate!;
-        invoiceDateInput.dispatchEvent(new Event('input',{bubbles:true}));
-        invoiceDateInput.dispatchEvent(new Event('change',{bubbles:true}));
-      }
-      invoiceCalendarPanel.hidden=true;
-    }));
-  };
-  el<HTMLButtonElement>('#invoiceJalaliCalendar')?.addEventListener('click',()=>{
-    const rawDate=digits(invoiceDateInput?.value||todayJalali());
-    const v=rawDate.split('/').map(Number);
-    if(v.length===3&&Number.isFinite(v[0])&&Number.isFinite(v[1])&&v[0]>1200&&v[1]>=1&&v[1]<=12){
-      calendarYear=v[0];calendarMonth=v[1];
-    }else{
-      const today=digits(todayJalali()).split('/').map(Number);
-      calendarYear=today[0];calendarMonth=today[1];
-    }
-    renderInvoiceJalaliCalendar();
-  });
+  // تقویم فاکتور از طریق attachJalaliCalendar / enhanceDateFields وصل می‌شود
+  const invDate = el<HTMLInputElement>('#invoiceDate');
+  if (invDate) {
+    const btn = el<HTMLButtonElement>('#invoiceJalaliCalendar');
+    const panel = el<HTMLDivElement>('#invoiceJalaliCalendarPanel');
+    if (btn) delete btn.dataset.calBound;
+    delete invDate.dataset.calendarEnhanced;
+    attachJalaliCalendar(invDate, btn, panel);
+  }
   el<HTMLInputElement>('#invoiceTax')?.addEventListener('input',updateInvoiceTotals);
   el<HTMLButtonElement>('#invoiceAddPayment')?.addEventListener('click',()=>addInvoicePaymentRow());el<HTMLDivElement>('#invoicePaymentRows')?.addEventListener('input',updateInvoiceTotals);el<HTMLDivElement>('#invoicePaymentRows')?.addEventListener('change',updateInvoiceTotals);
   el<HTMLInputElement>('#invoiceTaxRate')?.addEventListener('change',applyInvoiceTaxRate);

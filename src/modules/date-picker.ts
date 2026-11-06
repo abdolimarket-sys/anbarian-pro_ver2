@@ -40,25 +40,51 @@ function formatJalali(y: number, m: number, d: number): string {
   return `${y}/${String(m).padStart(2, '0')}/${String(d).padStart(2, '0')}`;
 }
 
-function daysOfJalaliMonth(year: number, month: number): Date[] {
-  const yearProbe = new Date(year + 621, 2, 20, 12);
-  let yearStart: Date | null = null;
-  for (let i = -7; i <= 7; i++) {
-    const candidate = new Date(yearProbe);
-    candidate.setDate(candidate.getDate() + i);
-    const p = persianParts(candidate);
-    if (p.year === year && p.month === 1 && p.day === 1) { yearStart = candidate; break; }
+function findJalaliYearStart(year: number): Date | null {
+  // حوالی ۲۱ مارس میلادی را جستجو می‌کنیم
+  for (let day = 18; day <= 24; day++) {
+    for (const yOff of [621, 622]) {
+      const candidate = new Date(year + yOff - 1, 2, day, 12, 0, 0);
+      // year+621 roughly maps; also try year+622-1
+      const p = persianParts(candidate);
+      if (p.year === year && p.month === 1 && p.day === 1) return candidate;
+    }
   }
+  // جستجوی گسترده‌تر
+  const probe = new Date(year + 621, 2, 15, 12);
+  for (let i = 0; i < 20; i++) {
+    const d = new Date(probe);
+    d.setDate(probe.getDate() + i);
+    const p = persianParts(d);
+    if (p.year === year && p.month === 1 && p.day === 1) return d;
+  }
+  return null;
+}
+
+function daysOfJalaliMonth(year: number, month: number): Date[] {
+  const yearStart = findJalaliYearStart(year);
   if (!yearStart) return [];
   const monthOffset = month <= 6 ? (month - 1) * 31 : 186 + (month - 7) * 30;
   const first = new Date(yearStart);
   first.setDate(first.getDate() + monthOffset);
   const firstParts = persianParts(first);
-  if (firstParts.year !== year || firstParts.month !== month || firstParts.day !== 1) return [];
+  // اگر روز اول ماه دقیق نبود، نزدیک‌ترین روز ۱ را پیدا کن
+  let start = first;
+  if (firstParts.year !== year || firstParts.month !== month || firstParts.day !== 1) {
+    let found: Date | null = null;
+    for (let i = -3; i <= 5; i++) {
+      const t = new Date(first);
+      t.setDate(first.getDate() + i);
+      const p = persianParts(t);
+      if (p.year === year && p.month === month && p.day === 1) { found = t; break; }
+    }
+    if (!found) return [];
+    start = found;
+  }
   const days: Date[] = [];
   for (let i = 0; i < 32; i++) {
-    const day = new Date(first);
-    day.setDate(day.getDate() + i);
+    const day = new Date(start);
+    day.setDate(start.getDate() + i);
     const p = persianParts(day);
     if (p.year !== year || p.month !== month) break;
     days.push(day);
@@ -74,7 +100,11 @@ function closeAllPanels(except?: HTMLElement): void {
 
 function renderPanel(panel: HTMLElement, input: HTMLInputElement, year: number, month: number): void {
   const days = daysOfJalaliMonth(year, month);
-  if (!days.length) return;
+  if (!days.length) {
+    panel.innerHTML = `<div class="jalali-cal-head"><b>خطا در تقویم</b></div><p class="hint" style="padding:8px">امکان نمایش این ماه نیست.</p>`;
+    panel.hidden = false;
+    return;
+  }
   const first = days[0];
   const offset = (first.getDay() + 1) % 7;
   panel.innerHTML =
@@ -92,8 +122,9 @@ function renderPanel(panel: HTMLElement, input: HTMLInputElement, year: number, 
     }).join('') +
     `</div>`;
   panel.hidden = false;
-  panel.dataset.calYear = String(year);
-  panel.dataset.calMonth = String(month);
+  panel.style.display = 'block';
+  panel.style.zIndex = '10180';
+  panel.style.position = 'absolute';
 
   panel.querySelector('[data-cal-prev]')?.addEventListener('click', ev => {
     ev.preventDefault();
@@ -117,6 +148,7 @@ function renderPanel(panel: HTMLElement, input: HTMLInputElement, year: number, 
       input.dispatchEvent(new Event('input', { bubbles: true }));
       input.dispatchEvent(new Event('change', { bubbles: true }));
       panel.hidden = true;
+      panel.style.display = 'none';
     });
   });
 }
@@ -126,70 +158,63 @@ function openPanelFor(input: HTMLInputElement, panel: HTMLElement): void {
   const y = parsed?.y || 1400;
   const m = parsed?.m || 1;
   closeAllPanels(panel);
+  // اطمینان از والد نسبی
+  const host = panel.parentElement;
+  if (host && getComputedStyle(host).position === 'static') {
+    host.style.position = 'relative';
+  }
   renderPanel(panel, input, y, m);
 }
 
-function wrapInput(input: HTMLInputElement): void {
-  if (input.dataset.calendarEnhanced === 'true') return;
-  if (input.type === 'date' || input.type === 'datetime-local' || input.type === 'month' || input.type === 'time') return;
-  if (input.disabled || input.readOnly) return;
+/** اتصال دستی تقویم به یک input + دکمه + پنل موجود یا ساخته‌شده */
+export function attachJalaliCalendar(input: HTMLInputElement, button?: HTMLButtonElement | null, panel?: HTMLElement | null): void {
+  if (!input) return;
+  let btn = button || input.parentElement?.querySelector<HTMLButtonElement>('.jalali-cal-btn, #invoiceJalaliCalendar, [data-jalali-cal-btn]') || null;
+  let pan = panel
+    || input.parentElement?.parentElement?.querySelector<HTMLElement>('.invoice-jalali-calendar')
+    || input.parentElement?.querySelector<HTMLElement>('.invoice-jalali-calendar')
+    || null;
 
-  // اگر از قبل ساختار فاکتور دارد، فقط رویداد را وصل کن
-  const existingBtn = input.parentElement?.querySelector<HTMLButtonElement>('.jalali-cal-btn, #invoiceJalaliCalendar');
-  const existingPanel =
-    input.parentElement?.parentElement?.querySelector<HTMLElement>('.invoice-jalali-calendar') ||
-    input.parentElement?.querySelector<HTMLElement>('.invoice-jalali-calendar') ||
-    document.getElementById('invoiceJalaliCalendarPanel');
-
-  if (existingBtn && existingPanel) {
-    input.dataset.calendarEnhanced = 'true';
-    if (!existingBtn.dataset.calBound) {
-      existingBtn.dataset.calBound = '1';
-      existingBtn.addEventListener('click', ev => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        if (existingPanel.hidden === false) existingPanel.hidden = true;
-        else openPanelFor(input, existingPanel);
-      });
-    }
-    // یکدست‌سازی ارقام
-    input.addEventListener('blur', () => {
-      const p = parseJalali(input.value);
-      if (p) input.value = formatJalali(p.y, p.m, p.d);
-    });
-    return;
+  if (!btn) {
+    // ساخت ساختار
+    const wrap = document.createElement('div');
+    wrap.className = 'invoice-jalali-date';
+    wrap.style.position = 'relative';
+    input.parentNode?.insertBefore(wrap, input);
+    wrap.appendChild(input);
+    btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn-secondary jalali-cal-btn';
+    btn.setAttribute('aria-label', 'تقویم شمسی');
+    btn.title = 'تقویم شمسی';
+    btn.textContent = '▦';
+    wrap.appendChild(btn);
+    pan = document.createElement('div');
+    pan.className = 'invoice-jalali-calendar';
+    pan.hidden = true;
+    wrap.appendChild(pan);
+  } else if (!pan) {
+    pan = document.createElement('div');
+    pan.className = 'invoice-jalali-calendar';
+    pan.hidden = true;
+    const host = btn.parentElement || input.parentElement;
+    host?.appendChild(pan);
   }
 
+  if (btn.dataset.calBound === '1') return;
+  btn.dataset.calBound = '1';
   input.dataset.calendarEnhanced = 'true';
-  input.setAttribute('inputmode', 'numeric');
-  input.setAttribute('autocomplete', 'off');
-  if (!input.placeholder) input.placeholder = '1405/01/01';
-
-  const wrap = document.createElement('div');
-  wrap.className = 'invoice-jalali-date';
-  input.parentNode?.insertBefore(wrap, input);
-  wrap.appendChild(input);
-
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = 'btn btn-secondary jalali-cal-btn';
-  btn.setAttribute('aria-label', 'تقویم شمسی');
-  btn.title = 'تقویم شمسی';
-  btn.textContent = '▦';
-  wrap.appendChild(btn);
-
-  const panel = document.createElement('div');
-  panel.className = 'invoice-jalali-calendar';
-  panel.hidden = true;
-  wrap.insertAdjacentElement('afterend', panel);
-
+  const panelEl = pan!;
   btn.addEventListener('click', ev => {
     ev.preventDefault();
     ev.stopPropagation();
-    if (!panel.hidden) panel.hidden = true;
-    else openPanelFor(input, panel);
+    if (!panelEl.hidden && panelEl.style.display !== 'none') {
+      panelEl.hidden = true;
+      panelEl.style.display = 'none';
+    } else {
+      openPanelFor(input, panelEl);
+    }
   });
-
   input.addEventListener('blur', () => {
     const p = parseJalali(input.value);
     if (p) input.value = formatJalali(p.y, p.m, p.d);
@@ -199,9 +224,7 @@ function wrapInput(input: HTMLInputElement): void {
 function isDateField(input: HTMLInputElement): boolean {
   if (input.dataset.calendarEnhanced === 'true') return false;
   if (input.type === 'date' || input.type === 'datetime-local' || input.type === 'month' || input.type === 'time') return false;
-  if (input.disabled || input.readOnly) return false;
-  // فیلدهای مخفی یا داخل کانتینر مخفی را هم اگر id تاریخ دارند پوشش می‌دهیم مگر خود input مخفی باشد
-  if (input.hidden) return false;
+  if (input.disabled || input.readOnly || input.hidden) return false;
   const id = (input.id || '').toLowerCase();
   const name = (input.name || '').toLowerCase();
   const placeholder = input.placeholder || '';
@@ -223,7 +246,7 @@ function isDateField(input: HTMLInputElement): boolean {
 
 function enhance(input: HTMLInputElement): void {
   if (!isDateField(input)) return;
-  wrapInput(input);
+  attachJalaliCalendar(input);
 }
 
 export function enhanceDateFields(root: ParentNode = document): void {
@@ -234,7 +257,7 @@ export function initUnifiedDatePickers(): void {
   enhanceDateFields(document);
   document.addEventListener('click', ev => {
     const t = ev.target as HTMLElement;
-    if (t.closest('.invoice-jalali-calendar') || t.closest('.invoice-jalali-date') || t.closest('.jalali-cal-btn')) return;
+    if (t.closest('.invoice-jalali-calendar') || t.closest('.invoice-jalali-date') || t.closest('.jalali-cal-btn') || t.id === 'invoiceJalaliCalendar') return;
     closeAllPanels();
   });
   const observer = new MutationObserver(records => {

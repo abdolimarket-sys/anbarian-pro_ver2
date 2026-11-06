@@ -2225,3 +2225,42 @@ input[placeholder*="140"], input[placeholder*="14"] {
 .accounting-module-sheet .invoice-jalali-calendar {
   z-index: 10150;
 }
+
+
+/* تقویم داخل برگه فاکتور و اقلام باید روی همه چیز بیاید */
+.invoice-jalali-date { position: relative; }
+.invoice-jalali-calendar {
+  position: absolute !important;
+  z-index: 10180 !important;
+  display: block;
+  right: 0;
+  left: auto;
+  min-width: 280px;
+}
+.invoice-jalali-calendar[hidden] { display: none !important; }
+#commercePanelSheet .invoice-jalali-calendar,
+#invoiceItemsSheet .invoice-jalali-calendar,
+.accounting-module-sheet .invoice-jalali-calendar {
+  z-index: 10180 !important;
+}
+#invoiceItemsSheet .invoice-live-search { position: relative; z-index: 20; }
+#invoiceItemsSheet .invoice-product-suggestions {
+  position: absolute;
+  z-index: 300;
+  top: 100%;
+  right: 0;
+  left: 0;
+  max-height: 320px;
+  overflow: auto;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border-color, #ccd3dd);
+  border-radius: 0 0 10px 10px;
+  box-shadow: 0 10px 28px rgba(0,0,0,.18);
+}
+
+/* اسکنر باید روی برگه اقلام/فاکتور دیده شود */
+.scanner-modal.show,
+#scannerModal.show,
+#scannerModal[style*="flex"] {
+  z-index: 10300 !important;
+}
