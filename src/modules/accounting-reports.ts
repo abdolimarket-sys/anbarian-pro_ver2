@@ -5,6 +5,7 @@ import { loadAccountingData, type AccountingData } from './accounting';
 import { loadCommerceData, invoiceOutstanding, type CommerceData } from './accounting-commerce';
 import { loadInventoryCostData, type InventoryCostData } from './inventory-costing';
 import { products } from './state';
+import { enhanceDateFields } from './date-picker';
 import { toast } from './ui';
 
 type DateRange = { from?: string; to?: string; fiscalPeriodId?: string };
@@ -559,6 +560,7 @@ function reportTitle(id:string):string{
 }
 
 function bindReportRunner():void{
+  queueMicrotask(()=>enhanceDateFields(document));
   el<HTMLButtonElement>('#arRun')?.addEventListener('click',renderReport);
   el<HTMLButtonElement>('#arCsv')?.addEventListener('click',exportCsv);
   el<HTMLButtonElement>('#arPrint')?.addEventListener('click',()=>window.print());
@@ -583,8 +585,8 @@ function renderReportRunner(reportId:string):void{
     <input type="hidden" id="arType" value="${esc(reportId)}">
     <div class="form-grid">
       <label class="field">سال مالی<select id="arPeriod"><option value="">همه سال‌های مالی</option>${acc.fiscalPeriods.map(p=>`<option value="${esc(p.id)}">${esc(p.title)}</option>`).join('')}</select></label>
-      <label class="field">از تاریخ شمسی<input id="arFrom" placeholder="۱۴۰۵/۰۱/۰۱"></label>
-      <label class="field">تا تاریخ شمسی<input id="arTo" placeholder="۱۴۰۵/۱۲/۲۹"></label>
+      <label class="field">از تاریخ شمسی<input id="arFrom" placeholder="1405/01/01"></label>
+      <label class="field">تا تاریخ شمسی<input id="arTo" placeholder="1405/12/29"></label>
       <label class="field" id="arAccountWrap" ${reportId==='ledger'?'':'hidden'}>حساب<select id="arAccount"><option value="">انتخاب حساب</option>${acc.accounts.filter(a=>a.isActive&&a.level==='detail').map(a=>`<option value="${esc(a.id)}">${esc(a.code)} — ${esc(a.title)}</option>`).join('')}</select></label>
     </div>
     <div class="actions" style="margin:10px 0">
@@ -617,6 +619,7 @@ function renderReportsCatalog():void{
         </div>
       </div>`).join('')}
   </div>`;
+  queueMicrotask(()=>enhanceDateFields(root));
   root.querySelectorAll<HTMLButtonElement>('[data-report-id]').forEach(btn=>{
     btn.addEventListener('click',()=>renderReportRunner(btn.dataset.reportId||'trial'));
   });

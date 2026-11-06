@@ -20,6 +20,7 @@ import { guardPermission } from './filters-roles';
 
 let editingId: string | null = null;
 let onProductsChanged: (() => void) | null = null;
+let pendingProductSaveCallback: ((productId: string) => void) | null = null;
 
 export function setProductsChangeListener(fn: (() => void) | null): void {
   onProductsChanged = fn;
@@ -39,7 +40,7 @@ function ensureModal(): HTMLElement {
   modal.id = 'productModal';
   modal.className = 'modal-overlay';
   modal.style.cssText =
-    'display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:260;align-items:center;justify-content:center;padding:16px';
+    'display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10200;align-items:center;justify-content:center;padding:16px';
   modal.innerHTML = `
     <div class="modal-card" style="max-width:420px;width:100%;max-height:90vh;overflow:auto">
       <h2 id="productModalTitle" style="margin-bottom:12px;color:var(--primary-dark)">کالای جدید</h2>
@@ -125,14 +126,21 @@ function numOrNull(id: string): number | null {
   return isNaN(v) ? null : v;
 }
 
-export function openProductModal(id?: string | null, presetCode?: string): void {
+export function openProductModal(
+  id?: string | null,
+  presetCode?: string,
+  opts?: { presetName?: string; onSaved?: (productId: string) => void },
+): void {
   if (!guardPermission('inventory.edit', 'ویرایش کالا')) return;
 
   const modal = ensureModal();
+  // همیشه روی همه لایه‌ها باشد (فاکتور / اقلام)
+  modal.style.zIndex = '10200';
   const title = document.getElementById('productModalTitle');
   const delBtn = document.getElementById('productDelete') as HTMLButtonElement | null;
 
   editingId = id || null;
+  pendingProductSaveCallback = opts?.onSaved || null;
 
   const fields = [
     'productId',
@@ -195,7 +203,17 @@ export function openProductModal(id?: string | null, presetCode?: string): void 
     if (title) title.textContent = 'کالای جدید';
     if (delBtn) delBtn.style.display = 'none';
     if (presetCode) {
-      (document.getElementById('productCode') as HTMLInputElement).value = presetCode;
+      const looksLikeBarcode = /^[0-9۰-۹٠-٩\-\s]{4,}$/.test(presetCode.trim());
+      if (looksLikeBarcode) {
+        (document.getElementById('productCode') as HTMLInputElement).value = normalizeDigits(presetCode);
+      } else if (!opts?.presetName) {
+        (document.getElementById('productName') as HTMLInputElement).value = presetCode;
+      } else {
+        (document.getElementById('productCode') as HTMLInputElement).value = normalizeDigits(presetCode);
+      }
+    }
+    if (opts?.presetName) {
+      (document.getElementById('productName') as HTMLInputElement).value = opts.presetName;
     }
   }
 
@@ -207,6 +225,7 @@ export function closeProductModal(): void {
   const modal = document.getElementById('productModal');
   if (modal) modal.style.display = 'none';
   editingId = null;
+  pendingProductSaveCallback = null;
 }
 
 export function saveProductFromForm(): boolean {
@@ -269,7 +288,13 @@ export function saveProductFromForm(): boolean {
 
   save(true);
   notify();
+  const savedId = id || products[products.length - 1]?.id || '';
+  const cb = pendingProductSaveCallback;
+  pendingProductSaveCallback = null;
   closeProductModal();
+  if (cb && savedId) {
+    try { cb(savedId); } catch (e) { console.warn('product onSaved failed', e); }
+  }
   return true;
 }
 
@@ -289,10 +314,22 @@ export function deleteProduct(id: string): boolean {
   return true;
 }
 
-/** اتصال از اسکن «یافت نشد» */
-export function offerAddProduct(code: string): void {
-  code = normalizeDigits(code);
-  if (confirm('کالایی با بارکد «' + code + '» نیست. اضافه شود؟')) {
-    openProductModal(null, code);
-  }
+/** اتصال از اسکن یا جستجوی فاکتور وقتی کالا نیست */
+export function offerAddProduct(
+  codeOrName: string,
+  opts?: { onSaved?: (productId: string) => void; asName?: boolean },
+): void {
+  const raw = (codeOrName || '').trim();
+  if (!raw) return;
+  const asName = opts?.asName ?? !/^[0-9۰-۹٠-٩\-\s]{4,}$/.test(raw);
+  const label = asName ? `نام «${raw}»` : `بارکد «${normalizeDigits(raw)}»`;
+  if (!confirm(`کالایی با ${label} پیدا نشد.\nآیا می‌خواهید همین الان تعریف کنید؟`)) return;
+  openProductModal(
+    null,
+    asName ? undefined : normalizeDigits(raw),
+    {
+      presetName: asName ? raw : undefined,
+      onSaved: opts?.onSaved,
+    },
+  );
 }

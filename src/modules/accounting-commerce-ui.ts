@@ -7,6 +7,8 @@ import {
   type CommerceData, type AccountingParty, type InvoiceType, type InvoicePaymentPart, isSaleInvoiceType, isPurchaseInvoiceType,
 } from './accounting-commerce';
 import { toast } from './ui';
+import { openProductModal, offerAddProduct } from './products-ui';
+import { enhanceDateFields, todayJalali as sharedTodayJalali } from './date-picker';
 import { products, logAudit, findProductByCode } from './state';
 import { openScanner } from './scanner';
 import { loadInventoryCostData, saveInventoryCostData, setOpeningStockCost } from './inventory-costing';
@@ -139,7 +141,7 @@ function openPartyFormSheet(opts?:{preferType?:'customer'|'supplier'|'both'; sel
   const overlay=document.createElement('div');
   overlay.id='partyFormSheet';
   overlay.dir='rtl';
-  overlay.style.cssText='position:fixed;inset:0;z-index:10060;background:var(--surface,#fff);color:var(--text,#222);overflow:auto;padding:clamp(12px,3vw,28px)';
+  overlay.style.cssText='position:fixed;inset:0;z-index:10120;background:var(--surface,#fff);color:var(--text,#222);overflow:auto;padding:clamp(12px,3vw,28px)';
   overlay.innerHTML=`<div style="max-width:900px;margin:0 auto"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:8px"><h2 style="margin:0">تعریف شخص جدید</h2><button type="button" class="btn btn-secondary" id="partySheetClose">بستن</button></div>${partiesPanelHtml()}</div>`;
   document.body.appendChild(overlay);
   const typeSel=overlay.querySelector<HTMLSelectElement>('#partyType');
@@ -187,7 +189,7 @@ async function operatingPanelHtml():Promise<string>{
 <p class="hint">برای هزینه‌های متفرقه (اجاره، حقوق، ملزومات و …) و درآمدهای غیر از فاکتور فروش. با ثبت، سند حسابداری قطعی ساخته می‌شود.</p>
 <div class="form-grid">
 <label class="field">نوع ثبت<select id="opKind"><option value="expense">هزینه</option><option value="income">درآمد</option></select></label>
-<label class="field">تاریخ شمسی<input id="opDate" value="${todayJalali()}" placeholder="۱۴۰۵/۰۱/۰۱" inputmode="numeric"></label>
+<label class="field">تاریخ شمسی<input id="opDate" value="${todayJalali()}" placeholder="1405/01/01" inputmode="numeric"></label>
 <label class="field">سال مالی<select id="opPeriod">${periodOpts||'<option value="">سال مالی باز تعریف نشده</option>'}</select></label>
 <label class="field">مبلغ (${currency==='toman'?'تومان':'ریال'})<input id="opAmount" inputmode="decimal" placeholder="۰"></label>
 <label class="field" id="opAccountExpenseWrap">حساب هزینه<select id="opExpenseAccount"><option value="">انتخاب حساب هزینه</option>${expenseOpts}</select></label>
@@ -228,7 +230,7 @@ function cashRows():string {
 function addInvoicePaymentRow(part?:InvoicePaymentPart):void {
  const host=el<HTMLDivElement>('#invoicePaymentRows');if(!host)return;
  const row=document.createElement('div');row.className='form-grid invoice-payment-row';row.style.cssText='border:1px solid var(--border-color,#ddd);border-radius:8px;padding:10px;margin:8px 0;align-items:end';
- row.innerHTML=`<label class="field">روش پرداخت<select data-pay-method><option value="cash">نقدی</option><option value="card">کارت</option><option value="cheque">چک</option><option value="credit">اعتباری (مانده بدهی)</option></select></label><label class="field">مبلغ (${currency==='toman'?'تومان':'ریال'})<input data-pay-amount inputmode="numeric" placeholder="مبلغ این مرحله"></label><label class="field" data-pay-cheque hidden>شماره چک<input data-pay-cheque-number></label><label class="field" data-pay-cheque hidden>بانک<input data-pay-cheque-bank></label><label class="field" data-pay-cheque hidden>شماره حساب / شناسه صیادی<input data-pay-cheque-account></label><label class="field" data-pay-cheque hidden>سررسید چک شمسی<input data-pay-cheque-due placeholder="۱۴۰۵/۰۱/۳۰"></label><label class="field" data-pay-cheque hidden>توضیحات چک<input data-pay-cheque-note></label><button type="button" class="btn btn-sm btn-secondary" data-pay-remove>حذف این مرحله</button>`;
+ row.innerHTML=`<label class="field">روش پرداخت<select data-pay-method><option value="cash">نقدی</option><option value="card">کارت</option><option value="cheque">چک</option><option value="credit">اعتباری (مانده بدهی)</option></select></label><label class="field">مبلغ (${currency==='toman'?'تومان':'ریال'})<input data-pay-amount inputmode="numeric" placeholder="مبلغ این مرحله"></label><label class="field" data-pay-cheque hidden>شماره چک<input data-pay-cheque-number></label><label class="field" data-pay-cheque hidden>بانک<input data-pay-cheque-bank></label><label class="field" data-pay-cheque hidden>شماره حساب / شناسه صیادی<input data-pay-cheque-account></label><label class="field" data-pay-cheque hidden>سررسید چک شمسی<input data-pay-cheque-due placeholder="1405/01/30"></label><label class="field" data-pay-cheque hidden>توضیحات چک<input data-pay-cheque-note></label><button type="button" class="btn btn-sm btn-secondary" data-pay-remove>حذف این مرحله</button>`;
  host.appendChild(row);const method=row.querySelector<HTMLSelectElement>('[data-pay-method]')!;method.value=part?.method||'cash';row.querySelector<HTMLInputElement>('[data-pay-amount]')!.value=part?formatMoneyFromRial(part.amountRial,currency):'';row.querySelector<HTMLInputElement>('[data-pay-cheque-number]')!.value=part?.chequeNumber||'';row.querySelector<HTMLInputElement>('[data-pay-cheque-bank]')!.value=part?.chequeBank||'';row.querySelector<HTMLInputElement>('[data-pay-cheque-account]')!.value=part?.chequeAccount||'';row.querySelector<HTMLInputElement>('[data-pay-cheque-due]')!.value=part?.chequeDueDate||'';row.querySelector<HTMLInputElement>('[data-pay-cheque-note]')!.value=part?.note||'';
  const toggle=()=>row.querySelectorAll<HTMLElement>('[data-pay-cheque]').forEach(x=>x.hidden=method.value!=='cheque');method.addEventListener('change',toggle);toggle();row.querySelector('[data-pay-remove]')!.addEventListener('click',()=>row.remove());
 }
@@ -296,10 +298,24 @@ function addProductToInvoice(productId:string, keepScanReady=false):void {
   }
 }
 function invoiceProductMatches(value:string){
-  const q=digits(value).trim().toLocaleLowerCase();if(!q)return [];
-  return products.filter(p=>[p.name,p.code||'',p.sku||''].some(v=>digits(v).toLocaleLowerCase().includes(q))).slice(0,12);
+  const raw=(value||'').trim();if(!raw)return [];
+  const q=digits(raw).toLocaleLowerCase();
+  const qRaw=raw.toLocaleLowerCase();
+  return products.filter(p=>{
+    const name=(p.name||'').toLocaleLowerCase();
+    const code=digits(p.code||'').toLocaleLowerCase();
+    const sku=digits(p.sku||'').toLocaleLowerCase();
+    return name.includes(qRaw)||name.includes(q)||code.includes(q)||sku.includes(q)||digits(name).includes(q);
+  }).slice(0,12);
 }
-function resolveInvoiceProduct(value:string){const q=digits(value).trim().toLocaleLowerCase();if(!q)return null;const matches=invoiceProductMatches(value);return matches.find(p=>p.name.trim().toLocaleLowerCase()===q||digits(p.code||'').toLocaleLowerCase()===q||digits(p.sku||'').toLocaleLowerCase()===q)|| (matches.length===1?matches[0]:null);}
+function resolveInvoiceProduct(value:string){
+  const raw=(value||'').trim();if(!raw)return null;
+  const q=digits(raw).toLocaleLowerCase();
+  const qRaw=raw.toLocaleLowerCase();
+  const matches=invoiceProductMatches(value);
+  return matches.find(p=>p.name.trim().toLocaleLowerCase()===qRaw||p.name.trim().toLocaleLowerCase()===q||digits(p.code||'').toLocaleLowerCase()===q||digits(p.sku||'').toLocaleLowerCase()===q)
+    || (matches.length===1?matches[0]:null);
+}
 function renderInvoiceProductSuggestions(value:string,activeIndex=0):void{
  const host=el<HTMLDivElement>('#invoiceProductSuggestions');if(!host)return;const matches=invoiceProductMatches(value);if(!matches.length){host.innerHTML='';host.hidden=true;return;}
  host.innerHTML=matches.map((p,i)=>`<button type="button" class="invoice-product-suggestion ${i===activeIndex?'active':''}" role="option" aria-selected="${i===activeIndex}" data-invoice-product-choice="${esc(p.id)}"><span><b>${esc(p.name)}</b><small>${esc(p.code||p.sku||'بدون کد')} · ${esc(p.unit||'عدد')}</small></span><span class="suggestion-stock">موجودی ${fa(Number(p.systemQty)||0)}</span></button>`).join('');host.hidden=false;
@@ -315,7 +331,7 @@ function settlementRow(part?:InvoicePaymentPart):string {
  <label class="field" data-settle-cheque ${method==='cheque'?'':'hidden'}>شماره چک<input data-settle-cheque-number value="${esc(part?.chequeNumber||'')}"></label>
  <label class="field" data-settle-cheque ${method==='cheque'?'':'hidden'}>بانک<input data-settle-cheque-bank value="${esc(part?.chequeBank||'')}"></label>
  <label class="field" data-settle-cheque ${method==='cheque'?'':'hidden'}>شماره حساب / شناسه صیادی<input data-settle-cheque-account value="${esc(part?.chequeAccount||'')}"></label>
- <label class="field" data-settle-cheque ${method==='cheque'?'':'hidden'}>تاریخ سررسید چک<input data-settle-cheque-due value="${esc(part?.chequeDueDate||'')}" placeholder="۱۴۰۵/۰۱/۳۰"></label>
+ <label class="field" data-settle-cheque ${method==='cheque'?'':'hidden'}>تاریخ سررسید چک<input data-settle-cheque-due value="${esc(part?.chequeDueDate||'')}" placeholder="1405/01/30"></label>
  <label class="field" data-settle-cheque ${method==='cheque'?'':'hidden'}>توضیحات چک<input data-settle-cheque-note value="${esc(part?.note||'')}"></label>
  <button type="button" class="btn btn-sm btn-secondary" data-settle-remove>حذف مرحله</button></div>`;
 }
@@ -324,12 +340,12 @@ function openInvoiceSettlementSheet(invoiceId:string):void {
  document.getElementById('invoiceSettlementSheet')?.remove();
  const party=commerce.parties.find(p=>p.id===target.partyId);
  const overlay=document.createElement('div');overlay.id='invoiceSettlementSheet';overlay.dir='rtl';
- overlay.style.cssText='position:fixed;inset:0;z-index:10050;background:var(--surface,#fff);color:var(--text,#222);overflow:auto;padding:clamp(12px,3vw,28px)';
+ overlay.style.cssText='position:fixed;inset:0;z-index:10120;background:var(--surface,#fff);color:var(--text,#222);overflow:auto;padding:clamp(12px,3vw,28px)';
  const isSale=isSaleInvoiceType(target.type);
  const actionLabel=isSale?'دریافت':'پرداخت';
  overlay.innerHTML=`<div style="max-width:1000px;margin:0 auto"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><h2 style="margin:0 0 6px">تسویه فاکتور — ${actionLabel}</h2><p class="hint" style="margin:0">شماره ${esc(target.number)} · ${esc(party?.name||'—')} · مبلغ نهایی ${money(target.grossRial)}</p></div><button type="button" class="btn btn-secondary" id="settlementBack">بازگشت</button></div>
  <div class="card" style="margin-top:16px"><h3>نوع ${actionLabel}</h3><p class="hint">روش و مبلغ را مشخص کنید. می‌توانید چند روش را ترکیب کنید (مثلاً بخشی نقد و بخشی چک). مانده به‌صورت اعتباری ثبت می‌شود.</p><div id="settlementRows">${((target.paymentParts||[]).filter(x=>x.method!=='credit').length?(target.paymentParts||[]).filter(x=>x.method!=='credit'):[{method:'cash' as const,amountRial:Math.max(0,target.grossRial)}]).map(x=>settlementRow(x)).join('')}</div><button type="button" class="btn btn-secondary" id="settlementAdd">افزودن روش ${actionLabel}</button>
- <div class="form-grid" style="margin-top:12px"><label class="field">سررسید مانده اعتباری (شمسی)<input id="settlementDueDate" value="${esc(target.dueDate||'')}" placeholder="۱۴۰۵/۰۱/۳۰"></label></div><div class="card" style="margin-top:12px"><div id="settlementTotals">در حال محاسبه...</div><div id="settlementCredit" class="hint" style="margin-top:8px"></div></div>
+ <div class="form-grid" style="margin-top:12px"><label class="field">سررسید مانده اعتباری (شمسی)<input id="settlementDueDate" value="${esc(target.dueDate||'')}" placeholder="1405/01/30"></label></div><div class="card" style="margin-top:12px"><div id="settlementTotals">در حال محاسبه...</div><div id="settlementCredit" class="hint" style="margin-top:8px"></div></div>
  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px"><button type="button" class="btn btn-primary" id="settlementConfirm">تأیید ${actionLabel} و ثبت قطعی</button><button type="button" class="btn btn-secondary" id="settlementCancel">انصراف</button></div></div></div>`;
  document.body.appendChild(overlay);
  const host=overlay.querySelector<HTMLDivElement>('#settlementRows')!;
@@ -436,7 +452,7 @@ async function bankPanel():Promise<string>{
 <div class="form-grid bank-entry-grid">
 <label class="field">نوع<select id="bankMoveKind"><option value="deposit">واریز نقد به بانک</option><option value="withdraw">برداشت از بانک به صندوق</option></select></label>
 <label class="field">شماره<input id="bankMoveNo" placeholder="خودکار یا دستی"></label>
-<label class="field">تاریخ<input id="bankMoveDate" placeholder="۱۴۰۵/۰۱/۰۱" value="${todayJalali()}"></label>
+<label class="field">تاریخ<input id="bankMoveDate" placeholder="1405/01/01" value="${todayJalali()}"></label>
 <label class="field">صندوق / تنخواه<select id="bankMoveCash">${opts}</select></label>
 <label class="field">بانک<select id="bankMoveBank">${opts}</select></label>
 <label class="field">مبلغ<input id="bankMoveAmount" inputmode="numeric" placeholder="۰"></label>
@@ -448,7 +464,7 @@ async function bankPanel():Promise<string>{
 <details class="card bank-sub"><summary>۳) انتقال بین حساب‌ها</summary>
 <div class="form-grid bank-entry-grid">
 <label class="field">شماره<input id="bankTransferNo"></label>
-<label class="field">تاریخ<input id="bankTransferDate" placeholder="۱۴۰۵/۰۱/۰۱" value="${todayJalali()}"></label>
+<label class="field">تاریخ<input id="bankTransferDate" placeholder="1405/01/01" value="${todayJalali()}"></label>
 <label class="field">از حساب<select id="bankTransferFrom">${opts}</select></label>
 <label class="field">به حساب<select id="bankTransferTo">${opts}</select></label>
 <label class="field">مبلغ<input id="bankTransferAmount" inputmode="numeric" placeholder="۰"></label>
@@ -463,7 +479,7 @@ async function bankPanel():Promise<string>{
 <p class="hint">ثبت کارمزد مستقل (خدمات بانکی، دسته چک و …).</p>
 <div class="form-grid bank-entry-grid">
 <label class="field">شماره<input id="bankFeeNo"></label>
-<label class="field">تاریخ<input id="bankFeeDate" placeholder="۱۴۰۵/۰۱/۰۱" value="${todayJalali()}"></label>
+<label class="field">تاریخ<input id="bankFeeDate" placeholder="1405/01/01" value="${todayJalali()}"></label>
 <label class="field">حساب بانک<select id="bankFeeBank">${opts}</select></label>
 <label class="field">حساب هزینه کارمزد<select id="bankFeeExpense"><option value="">انتخاب</option>${feeOpts}</select></label>
 <label class="field">مبلغ<input id="bankFeeAmount" inputmode="numeric" placeholder="۰"></label>
@@ -542,7 +558,7 @@ async function profitabilityPanel():Promise<string>{
   const expenseRows=adjusted.expenseAccounts.map(x=>`<tr><td>${esc(x.code)}</td><td>${esc(x.title)}</td><td>${money(x.amountRial)}</td></tr>`).join('')||'<tr><td colspan="3">هزینه قطعی در حساب‌های گروه ۶ ثبت نشده است.</td></tr>';
   const adjustedProductRows=adjusted.products.slice(0,50).map(x=>`<tr><td>${esc(x.name)}</td><td>${money(x.revenueRial)}</td><td>${money(x.allocatedExpenseRial)}</td><td>${money(x.adjustedProfitRial)}</td><td>${fa(Math.round(x.adjustedMarginPercent*10)/10)}٪</td></tr>`).join('')||'<tr><td colspan="5">داده کافی برای تخصیص هزینه وجود ندارد.</td></tr>';
   const adjustedCustomerRows=adjusted.customers.slice(0,50).map(x=>`<tr><td>${esc(x.name)}</td><td>${money(x.revenueRial)}</td><td>${money(x.allocatedExpenseRial)}</td><td>${money(x.adjustedProfitRial)}</td><td>${fa(Math.round(x.adjustedMarginPercent*10)/10)}٪</td></tr>`).join('')||'<tr><td colspan="5">داده کافی برای تخصیص هزینه وجود ندارد.</td></tr>';
-  return `<div class="card" style="margin-top:12px"><h3>تحلیل سود ناخالص کالا و مشتری</h3><div class="form-grid" style="margin:10px 0"><label class="field">سال مالی<select id="profitabilityPeriod"><option value="">همه سال‌های مالی</option>${(await getProfitabilityPeriodComparison()).map(x=>`<option value="${esc(x.periodId)}" ${profitabilityFilter.fiscalPeriodId===x.periodId?'selected':''}>${esc(x.periodTitle)}</option>`).join('')}</select></label><label class="field">از تاریخ شمسی<input id="profitabilityFrom" placeholder="۱۴۰۵/۰۱/۰۱" value="${esc(profitabilityFilter.fromDate||'')}"></label><label class="field">تا تاریخ شمسی<input id="profitabilityTo" placeholder="۱۴۰۵/۱۲/۲۹" value="${esc(profitabilityFilter.toDate||'')}"></label><button class="btn btn-primary" id="profitabilityApplyFilter" type="button">اعمال فیلتر</button><button class="btn btn-secondary" id="profitabilityClearFilter" type="button">پاک‌کردن فیلتر</button><button class="btn btn-secondary" id="profitabilityExportXlsx" type="button">خروجی Excel همین بازه</button><button class="btn btn-secondary" id="profitabilityPrintPdf" type="button">چاپ / PDF همین بازه</button></div><p class="hint">گزارش فقط‌خواندنی بر اساس فاکتورهای فروش قطعی و گردش بهای تمام‌شده انبار؛ هزینه‌های عملیاتی، مالیات و هزینه‌های سربار در سود خالص لحاظ نشده‌اند.</p><div class="form-grid"><div class="stat-card"><b>${money(d.salesRial)}</b><span>کل فروش قطعی</span></div><div class="stat-card"><b>${money(d.costedSalesRial)}</b><span>فروش دارای بهای معتبر</span></div><div class="stat-card"><b>${money(d.cogsRial)}</b><span>بهای تمام‌شده کالای فروش‌رفته</span></div><div class="stat-card"><b>${money(d.grossProfitRial)}</b><span>سود ناخالص قابل محاسبه</span></div><div class="stat-card"><b>${fa(Math.round(d.marginPercent*10)/10)}٪</b><span>حاشیه سود ناخالص</span></div></div><p class="hint">فروش فاقد بهای قابل اتکا: ${money(d.uncostedRevenueRial)} · فروش با بهای موقت ناشی از کسری موجودی: ${money(d.provisionalRevenueRial)}. این مبالغ از محاسبه سود کنار گذاشته شده‌اند.</p><h4>روند ماهانه فروش، سود و هزینه‌ها</h4><p class="hint">طول میله‌ها نسبت به بیشترین مقدار همین نمودار مقیاس شده است؛ سود پس از هزینه، شاخص مدیریتی است و سود خالص رسمی محسوب نمی‌شود.</p><div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin-bottom:8px"><span>■ فروش</span><span>■ سود ناخالص</span><span>■ هزینه گروه ۶</span></div><div>${trendBars}</div><h4>سودآوری کالاها</h4><div class="table-wrap"><table class="data-table"><thead><tr><th>کالا</th><th>مقدار</th><th>فروش</th><th>بهای تمام‌شده</th><th>سود ناخالص</th><th>حاشیه</th></tr></thead><tbody>${productRows}</tbody></table></div><h4>سودآوری مشتریان</h4><div class="table-wrap"><table class="data-table"><thead><tr><th>مشتری</th><th>فروش</th><th>بهای تمام‌شده</th><th>سود ناخالص</th><th>حاشیه</th></tr></thead><tbody>${customerRows}</tbody></table></div><p class="hint">فاکتورهای پیش‌نویس، ردیف‌های خدماتی بدون بهای انبار، و فروش‌های دارای بهای موقت در سود محاسبه نمی‌شوند.</p><hr><h3>تخصیص تحلیلی هزینه‌ها و سود تعدیل‌شده</h3><p class="hint">هزینه‌های ثبت‌شده در اسناد قطعی حساب‌های گروه ۶، به نسبت فروش دارای بهای معتبر بین کالاها و مشتریان سرشکن شده‌اند. این تخصیص صرفاً گزارشی است و هیچ سند حسابداری یا گردش مالی را تغییر نمی‌دهد.</p><div class="form-grid"><div class="stat-card"><b>${money(adjusted.totalPostedExpensesRial)}</b><span>خالص هزینه ثبت‌شده در حساب‌های گروه ۶</span></div><div class="stat-card"><b>${money(adjusted.allocatedExpensesRial)}</b><span>هزینه تخصیص‌یافته به فروش‌های بهای‌دار</span></div><div class="stat-card"><b>${money(adjusted.unallocatedExpensesRial)}</b><span>هزینه تخصیص‌نیافته</span></div><div class="stat-card"><b>${money(adjusted.adjustedProfitRial)}</b><span>سود پس از کسر هزینه تخصیص‌یافته</span></div><div class="stat-card"><b>${fa(Math.round(adjusted.adjustedMarginPercent*10)/10)}٪</b><span>حاشیه پس از تخصیص هزینه</span></div></div><h4>ترکیب هزینه‌های ثبت‌شده</h4><div class="table-wrap"><table class="data-table"><thead><tr><th>کد حساب</th><th>عنوان حساب</th><th>خالص هزینه</th></tr></thead><tbody>${expenseRows}</tbody></table></div><h4>سود تعدیل‌شده کالاها</h4><div class="table-wrap"><table class="data-table"><thead><tr><th>کالا</th><th>فروش معتبر</th><th>هزینه تخصیصی</th><th>سود تعدیل‌شده</th><th>حاشیه</th></tr></thead><tbody>${adjustedProductRows}</tbody></table></div><h4>سود تعدیل‌شده مشتریان</h4><div class="table-wrap"><table class="data-table"><thead><tr><th>مشتری</th><th>فروش معتبر</th><th>هزینه تخصیصی</th><th>سود تعدیل‌شده</th><th>حاشیه</th></tr></thead><tbody>${adjustedCustomerRows}</tbody></table></div><p class="hint">مهم: این عدد «سود خالص رسمی» نیست؛ هزینه‌های گروه ۶ ممکن است مربوط به دوره‌های متفاوت یا درآمدهای خارج از فروش انبار باشند. تخصیص بر اساس نسبت فروش انجام شده و برای گزارش مدیریتی است. برای صورت سود و زیان رسمی، گزارش حسابداری با فیلتر سال مالی و تاریخ مبنا قرار گیرد.</p><hr><h3>مقایسه نموداری سال‌های مالی</h3><div>${periodRows.map(x=>{const max=Math.max(1,...periodRows.map(y=>Math.max(y.salesRial,y.grossProfitRial,y.postedExpensesRial)));return `<div style="padding:7px 0"><b>${esc(x.periodTitle)}</b><div style="display:grid;grid-template-columns:80px 1fr auto;gap:7px;align-items:center"><span>فروش</span><div style="height:8px;background:var(--border-color,#ddd);border-radius:8px;overflow:hidden"><div style="height:100%;width:${x.salesRial/max*100}%;background:#2878bd"></div></div><small>${money(x.salesRial)}</small><span>سود ناخالص</span><div style="height:8px;background:var(--border-color,#ddd);border-radius:8px;overflow:hidden"><div style="height:100%;width:${Math.max(0,x.grossProfitRial)/max*100}%;background:#26945e"></div></div><small>${money(x.grossProfitRial)}</small><span>هزینه</span><div style="height:8px;background:var(--border-color,#ddd);border-radius:8px;overflow:hidden"><div style="height:100%;width:${Math.max(0,x.postedExpensesRial)/max*100}%;background:#c58a27"></div></div><small>${money(x.postedExpensesRial)}</small></div></div>`}).join('')||'<p class="hint">دوره مالی برای نمودار وجود ندارد.</p>'}</div><h3>مقایسه عملکرد سال‌های مالی</h3><p class="hint">هر ردیف فقط شامل فاکتورهای فروش و اسناد هزینه قطعی همان سال مالی است. فروش فاقد بهای معتبر جداگانه نمایش داده می‌شود و از سود ناخالص کنار گذاشته شده است.</p><div class="table-wrap"><table class="data-table"><thead><tr><th>سال مالی</th><th>بازه شمسی</th><th>فروش</th><th>فروش بهای‌دار</th><th>بهای تمام‌شده</th><th>سود ناخالص</th><th>هزینه گروه ۶</th><th>سود تعدیل‌شده</th><th>حاشیه ناخالص</th><th>فروش بی‌بها/موقت</th></tr></thead><tbody>${periodComparisonRows}</tbody></table></div><p class="hint">سود تعدیل‌شده این جدول یک شاخص مدیریتی است، نه سود خالص رسمی؛ تخصیص هزینه‌ها همچنان بر مبنای نسبت فروش دارای بهای معتبر انجام می‌شود.</p></div>`;
+  return `<div class="card" style="margin-top:12px"><h3>تحلیل سود ناخالص کالا و مشتری</h3><div class="form-grid" style="margin:10px 0"><label class="field">سال مالی<select id="profitabilityPeriod"><option value="">همه سال‌های مالی</option>${(await getProfitabilityPeriodComparison()).map(x=>`<option value="${esc(x.periodId)}" ${profitabilityFilter.fiscalPeriodId===x.periodId?'selected':''}>${esc(x.periodTitle)}</option>`).join('')}</select></label><label class="field">از تاریخ شمسی<input id="profitabilityFrom" placeholder="1405/01/01" value="${esc(profitabilityFilter.fromDate||'')}"></label><label class="field">تا تاریخ شمسی<input id="profitabilityTo" placeholder="1405/12/29" value="${esc(profitabilityFilter.toDate||'')}"></label><button class="btn btn-primary" id="profitabilityApplyFilter" type="button">اعمال فیلتر</button><button class="btn btn-secondary" id="profitabilityClearFilter" type="button">پاک‌کردن فیلتر</button><button class="btn btn-secondary" id="profitabilityExportXlsx" type="button">خروجی Excel همین بازه</button><button class="btn btn-secondary" id="profitabilityPrintPdf" type="button">چاپ / PDF همین بازه</button></div><p class="hint">گزارش فقط‌خواندنی بر اساس فاکتورهای فروش قطعی و گردش بهای تمام‌شده انبار؛ هزینه‌های عملیاتی، مالیات و هزینه‌های سربار در سود خالص لحاظ نشده‌اند.</p><div class="form-grid"><div class="stat-card"><b>${money(d.salesRial)}</b><span>کل فروش قطعی</span></div><div class="stat-card"><b>${money(d.costedSalesRial)}</b><span>فروش دارای بهای معتبر</span></div><div class="stat-card"><b>${money(d.cogsRial)}</b><span>بهای تمام‌شده کالای فروش‌رفته</span></div><div class="stat-card"><b>${money(d.grossProfitRial)}</b><span>سود ناخالص قابل محاسبه</span></div><div class="stat-card"><b>${fa(Math.round(d.marginPercent*10)/10)}٪</b><span>حاشیه سود ناخالص</span></div></div><p class="hint">فروش فاقد بهای قابل اتکا: ${money(d.uncostedRevenueRial)} · فروش با بهای موقت ناشی از کسری موجودی: ${money(d.provisionalRevenueRial)}. این مبالغ از محاسبه سود کنار گذاشته شده‌اند.</p><h4>روند ماهانه فروش، سود و هزینه‌ها</h4><p class="hint">طول میله‌ها نسبت به بیشترین مقدار همین نمودار مقیاس شده است؛ سود پس از هزینه، شاخص مدیریتی است و سود خالص رسمی محسوب نمی‌شود.</p><div style="display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin-bottom:8px"><span>■ فروش</span><span>■ سود ناخالص</span><span>■ هزینه گروه ۶</span></div><div>${trendBars}</div><h4>سودآوری کالاها</h4><div class="table-wrap"><table class="data-table"><thead><tr><th>کالا</th><th>مقدار</th><th>فروش</th><th>بهای تمام‌شده</th><th>سود ناخالص</th><th>حاشیه</th></tr></thead><tbody>${productRows}</tbody></table></div><h4>سودآوری مشتریان</h4><div class="table-wrap"><table class="data-table"><thead><tr><th>مشتری</th><th>فروش</th><th>بهای تمام‌شده</th><th>سود ناخالص</th><th>حاشیه</th></tr></thead><tbody>${customerRows}</tbody></table></div><p class="hint">فاکتورهای پیش‌نویس، ردیف‌های خدماتی بدون بهای انبار، و فروش‌های دارای بهای موقت در سود محاسبه نمی‌شوند.</p><hr><h3>تخصیص تحلیلی هزینه‌ها و سود تعدیل‌شده</h3><p class="hint">هزینه‌های ثبت‌شده در اسناد قطعی حساب‌های گروه ۶، به نسبت فروش دارای بهای معتبر بین کالاها و مشتریان سرشکن شده‌اند. این تخصیص صرفاً گزارشی است و هیچ سند حسابداری یا گردش مالی را تغییر نمی‌دهد.</p><div class="form-grid"><div class="stat-card"><b>${money(adjusted.totalPostedExpensesRial)}</b><span>خالص هزینه ثبت‌شده در حساب‌های گروه ۶</span></div><div class="stat-card"><b>${money(adjusted.allocatedExpensesRial)}</b><span>هزینه تخصیص‌یافته به فروش‌های بهای‌دار</span></div><div class="stat-card"><b>${money(adjusted.unallocatedExpensesRial)}</b><span>هزینه تخصیص‌نیافته</span></div><div class="stat-card"><b>${money(adjusted.adjustedProfitRial)}</b><span>سود پس از کسر هزینه تخصیص‌یافته</span></div><div class="stat-card"><b>${fa(Math.round(adjusted.adjustedMarginPercent*10)/10)}٪</b><span>حاشیه پس از تخصیص هزینه</span></div></div><h4>ترکیب هزینه‌های ثبت‌شده</h4><div class="table-wrap"><table class="data-table"><thead><tr><th>کد حساب</th><th>عنوان حساب</th><th>خالص هزینه</th></tr></thead><tbody>${expenseRows}</tbody></table></div><h4>سود تعدیل‌شده کالاها</h4><div class="table-wrap"><table class="data-table"><thead><tr><th>کالا</th><th>فروش معتبر</th><th>هزینه تخصیصی</th><th>سود تعدیل‌شده</th><th>حاشیه</th></tr></thead><tbody>${adjustedProductRows}</tbody></table></div><h4>سود تعدیل‌شده مشتریان</h4><div class="table-wrap"><table class="data-table"><thead><tr><th>مشتری</th><th>فروش معتبر</th><th>هزینه تخصیصی</th><th>سود تعدیل‌شده</th><th>حاشیه</th></tr></thead><tbody>${adjustedCustomerRows}</tbody></table></div><p class="hint">مهم: این عدد «سود خالص رسمی» نیست؛ هزینه‌های گروه ۶ ممکن است مربوط به دوره‌های متفاوت یا درآمدهای خارج از فروش انبار باشند. تخصیص بر اساس نسبت فروش انجام شده و برای گزارش مدیریتی است. برای صورت سود و زیان رسمی، گزارش حسابداری با فیلتر سال مالی و تاریخ مبنا قرار گیرد.</p><hr><h3>مقایسه نموداری سال‌های مالی</h3><div>${periodRows.map(x=>{const max=Math.max(1,...periodRows.map(y=>Math.max(y.salesRial,y.grossProfitRial,y.postedExpensesRial)));return `<div style="padding:7px 0"><b>${esc(x.periodTitle)}</b><div style="display:grid;grid-template-columns:80px 1fr auto;gap:7px;align-items:center"><span>فروش</span><div style="height:8px;background:var(--border-color,#ddd);border-radius:8px;overflow:hidden"><div style="height:100%;width:${x.salesRial/max*100}%;background:#2878bd"></div></div><small>${money(x.salesRial)}</small><span>سود ناخالص</span><div style="height:8px;background:var(--border-color,#ddd);border-radius:8px;overflow:hidden"><div style="height:100%;width:${Math.max(0,x.grossProfitRial)/max*100}%;background:#26945e"></div></div><small>${money(x.grossProfitRial)}</small><span>هزینه</span><div style="height:8px;background:var(--border-color,#ddd);border-radius:8px;overflow:hidden"><div style="height:100%;width:${Math.max(0,x.postedExpensesRial)/max*100}%;background:#c58a27"></div></div><small>${money(x.postedExpensesRial)}</small></div></div>`}).join('')||'<p class="hint">دوره مالی برای نمودار وجود ندارد.</p>'}</div><h3>مقایسه عملکرد سال‌های مالی</h3><p class="hint">هر ردیف فقط شامل فاکتورهای فروش و اسناد هزینه قطعی همان سال مالی است. فروش فاقد بهای معتبر جداگانه نمایش داده می‌شود و از سود ناخالص کنار گذاشته شده است.</p><div class="table-wrap"><table class="data-table"><thead><tr><th>سال مالی</th><th>بازه شمسی</th><th>فروش</th><th>فروش بهای‌دار</th><th>بهای تمام‌شده</th><th>سود ناخالص</th><th>هزینه گروه ۶</th><th>سود تعدیل‌شده</th><th>حاشیه ناخالص</th><th>فروش بی‌بها/موقت</th></tr></thead><tbody>${periodComparisonRows}</tbody></table></div><p class="hint">سود تعدیل‌شده این جدول یک شاخص مدیریتی است، نه سود خالص رسمی؛ تخصیص هزینه‌ها همچنان بر مبنای نسبت فروش دارای بهای معتبر انجام می‌شود.</p></div>`;
 }
 
 async function managementDashboardPanel():Promise<string>{
@@ -605,7 +621,7 @@ async function managementDashboardPanel():Promise<string>{
   const trendHtml=trendRows.length?trendRows.map(x=>{const bar=(label:string,value:number,color:string)=>`<div style="display:grid;grid-template-columns:92px minmax(50px,1fr) auto;gap:7px;align-items:center;margin:4px 0"><small>${label}</small><div style="height:9px;background:var(--border-color,#ddd);border-radius:8px;overflow:hidden"><div style="height:100%;width:${Math.max(0,Math.min(100,value/trendMax*100))}%;background:${color}"></div></div><small>${money(value)}</small></div>`;return `<div style="padding:9px 0;border-bottom:1px solid var(--border-color,#ddd)"><button type="button" class="btn btn-secondary btn-sm" data-management-month="${esc(x.month)}" aria-expanded="false">مشاهده جزئیات ${esc(x.month)}</button>${bar('فروش',x.salesRial,'#2878bd')}${bar('سود ناخالص',x.grossProfitRial,'#26945e')}${bar('هزینه ثبت‌شده',x.expensesRial,'#c58a27')}${bar('دریافت قطعی',x.receiptsRial,'#168a83')}${bar('پرداخت قطعی',x.paymentsRial,'#b85b5b')}${bar('مانده فعلی مطالبات',x.receivableRial,'#8064a2')}<div id="managementMonthDetail_${x.month.replace('/','')}" hidden style="margin-top:10px;padding:10px;background:var(--surface-color,#f7f7f7);border-radius:8px">${monthDetails(x.month)}</div></div>`}).join(''):'<p class="hint">برای بازه انتخابی داده ماهانه‌ای جهت نمودار وجود ندارد.</p>';
   (window as any).__anbarinManagementCompareRows=trendRows;
   return `<section class="card" style="margin-top:12px;border-inline-start:4px solid var(--primary-color,#2878bd)"><h2 style="margin-top:0">داشبورد مدیریتی یکپارچه</h2><p class="hint">نمای کلی عملیات بر اساس داده‌های ثبت‌شده · تاریخ مبنا: ${esc(anchor)} · مبالغ به ${currency==='toman'?'تومان':'ریال'}</p>
-  <div class="form-grid" style="margin:10px 0"><label class="field">سال مالی داشبورد<select id="managementPeriod"><option value="">همه سال‌های مالی</option>${periods.map(x=>`<option value="${esc(x.periodId)}" ${managementFilter.fiscalPeriodId===x.periodId?'selected':''}>${esc(x.periodTitle)}</option>`).join('')}</select></label><label class="field">از تاریخ شمسی<input id="managementFrom" placeholder="۱۴۰۵/۰۱/۰۱" value="${esc(managementFilter.fromDate||'')}"></label><label class="field">تا تاریخ شمسی<input id="managementTo" placeholder="۱۴۰۵/۱۲/۲۹" value="${esc(managementFilter.toDate||'')}"></label><button class="btn btn-primary" id="managementApplyFilter" type="button">اعمال فیلتر داشبورد</button><button class="btn btn-secondary" id="managementClearFilter" type="button">نمایش همه دوره‌ها</button><button class="btn btn-secondary" id="managementExportXlsx" type="button">خروجی Excel داشبورد</button><button class="btn btn-secondary" id="managementPrintPdf" type="button">چاپ / PDF داشبورد</button></div>
+  <div class="form-grid" style="margin:10px 0"><label class="field">سال مالی داشبورد<select id="managementPeriod"><option value="">همه سال‌های مالی</option>${periods.map(x=>`<option value="${esc(x.periodId)}" ${managementFilter.fiscalPeriodId===x.periodId?'selected':''}>${esc(x.periodTitle)}</option>`).join('')}</select></label><label class="field">از تاریخ شمسی<input id="managementFrom" placeholder="1405/01/01" value="${esc(managementFilter.fromDate||'')}"></label><label class="field">تا تاریخ شمسی<input id="managementTo" placeholder="1405/12/29" value="${esc(managementFilter.toDate||'')}"></label><button class="btn btn-primary" id="managementApplyFilter" type="button">اعمال فیلتر داشبورد</button><button class="btn btn-secondary" id="managementClearFilter" type="button">نمایش همه دوره‌ها</button><button class="btn btn-secondary" id="managementExportXlsx" type="button">خروجی Excel داشبورد</button><button class="btn btn-secondary" id="managementPrintPdf" type="button">چاپ / PDF داشبورد</button></div>
   <p class="hint">فیلتر فعال: ${esc(selectedLabel)}${from||to?` · بازه ${esc(from||'ابتدا')} تا ${esc(to||'امروز')}`:''}. شاخص‌های موجودی و مانده بانک/صندوق، وضعیت فعلی هستند و به بازه تاریخی محدود نمی‌شوند.</p>
   <div class="form-grid">
   <div class="stat-card"><b>${money(monthSales)}</b><span>فروش قطعی در بازه انتخابی</span></div>
@@ -643,18 +659,25 @@ async function openCommercePanelSheet(section:CommercePanelSection):Promise<void
     parties:'طرف حساب‌ها',
     operating:'هزینه و درآمد',
   };
+  // بستن برگه‌های تو در تو قبلی تا محتوا گیر نکند
+  document.getElementById('invoiceItemsSheet')?.remove();
+  document.getElementById('partyFormSheet')?.remove();
+  document.getElementById('invoiceTypeSheet')?.remove();
   activeCommerceSection=section;
   if(section==='sale'||section==='purchase'){
-    activeInvoiceType=section==='sale'?'sale':'purchase';
+    // اگر نوع فعلی با بخش هم‌خوان نیست، نوع پیش‌فرض همان بخش
+    if(section==='sale'&&!isSaleInvoiceType(activeInvoiceType)) activeInvoiceType='sale';
+    if(section==='purchase'&&!isPurchaseInvoiceType(activeInvoiceType)) activeInvoiceType='purchase';
   }
-  editingInvoiceId=null;
+  if(section!=='sale'&&section!=='purchase') editingInvoiceId=null;
   suppressCommerceSheetReopen=true;
   await render();
   suppressCommerceSheetReopen=false;
   const root=el<HTMLDivElement>('#accountingCommerceWorkspace');
   const sectionKey=(section==='sale'||section==='purchase')?'invoices':section;
   const sectionEl=root?.querySelector<HTMLElement>(`[data-commerce-section="${sectionKey}"]`);
-  if(!sectionEl){activeCommerceSection='home';return;}
+  if(!sectionEl){activeCommerceSection='home';toast('بخش موردنظر پیدا نشد.','error');return;}
+  sectionEl.hidden=false;
   document.getElementById('commercePanelSheet')?.remove();
   const overlay=document.createElement('div');
   overlay.id='commercePanelSheet';
@@ -665,10 +688,18 @@ async function openCommercePanelSheet(section:CommercePanelSection):Promise<void
   document.body.appendChild(overlay);
   document.body.classList.add('accounting-sheet-open');
   const mount=overlay.querySelector<HTMLElement>('#commercePanelMount')!;
-  while(sectionEl.firstChild)mount.appendChild(sectionEl.firstChild);
+  while(sectionEl.firstChild) mount.appendChild(sectionEl.firstChild);
+  if(!mount.firstChild){
+    mount.innerHTML=`<div class="card"><p class="hint">محتوای این بخش در دسترس نیست. بازگشت را بزنید و دوباره تلاش کنید.</p></div>`;
+  }
+  // اسکرول به بالای برگه تا فرم دیده شود
+  overlay.scrollTop=0;
+  mount.scrollIntoView({block:'start'});
   const close=()=>{
-    // return nodes so next render can rebuild cleanly
-    while(mount.firstChild)sectionEl.appendChild(mount.firstChild);
+    document.getElementById('invoiceItemsSheet')?.remove();
+    document.getElementById('partyFormSheet')?.remove();
+    // بازگرداندن گره‌ها تا render بعدی تمیز باشد
+    while(mount.firstChild) sectionEl.appendChild(mount.firstChild);
     overlay.remove();
     if(!document.getElementById('accountingModuleSheet')){
       document.body.classList.remove('accounting-sheet-open');
@@ -681,7 +712,7 @@ async function openCommercePanelSheet(section:CommercePanelSection):Promise<void
 
 function openInvoiceTypeSheet():void {
  document.getElementById('invoiceTypeSheet')?.remove();
- const overlay=document.createElement('div');overlay.id='invoiceTypeSheet';overlay.dir='rtl';overlay.style.cssText='position:fixed;inset:0;z-index:10040;background:var(--surface,#fff);color:var(--text,#222);overflow:auto;padding:clamp(16px,4vw,32px)';
+ const overlay=document.createElement('div');overlay.id='invoiceTypeSheet';overlay.dir='rtl';overlay.style.cssText='position:fixed;inset:0;z-index:10100;background:var(--surface,#fff);color:var(--text,#222);overflow:auto;padding:clamp(16px,4vw,32px)';
  overlay.innerHTML=`<div style="max-width:760px;margin:8vh auto"><div style="display:flex;justify-content:space-between;align-items:center"><h2>فاکتور</h2><button class="btn btn-secondary" id="invoiceTypeClose">بستن</button></div><div class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(190px,1fr));margin-top:16px"><button class="btn btn-primary" data-new-invoice-type="sale">فروش</button><button class="btn btn-primary" data-new-invoice-type="purchase">خرید</button><button class="btn btn-secondary" data-new-invoice-type="return-sale">برگشت از فروش</button><button class="btn btn-secondary" data-new-invoice-type="return-purchase">برگشت از خرید</button><button class="btn btn-secondary" data-new-invoice-type="proforma">پیش‌فاکتور</button></div></div>`;
  document.body.appendChild(overlay);
  overlay.querySelector('#invoiceTypeClose')!.addEventListener('click',()=>overlay.remove());
@@ -694,15 +725,114 @@ function openInvoiceTypeSheet():void {
   openCommercePanelSheet(isSaleInvoiceType(type)?'sale':'purchase');
  }));
 }
+function bindInvoiceProductSearch(root:ParentNode=document):void {
+  const searchInput=root.querySelector<HTMLInputElement>('#invoiceProductSearch');
+  const addBtn=root.querySelector<HTMLButtonElement>('#invoiceProductAdd');
+  const scanBtn=root.querySelector<HTMLButtonElement>('#invoiceScanOpen');
+  const addLineBtn=root.querySelector<HTMLButtonElement>('#invoiceAddLine');
+  if(!searchInput && !addBtn) return;
+  let suggestionIndex=0;
+  const addBySearch=()=>{
+    const value=(searchInput?.value||'').trim();
+    if(!value){toast('نام کالا یا بارکد را وارد کنید.','error');return;}
+    const byCode=findProductByCode(digits(value));
+    const product=byCode||resolveInvoiceProduct(value);
+    if(!product){
+      const looksLikeBarcode=/^[0-9۰-۹٠-٩\-\s]{4,}$/.test(value);
+      offerAddProduct(value,{
+        asName:!looksLikeBarcode,
+        onSaved:(productId)=>{
+          addProductToInvoice(productId,true);
+          const status=root.querySelector<HTMLElement>('#invoiceScanStatus')||el<HTMLElement>('#invoiceScanStatus');
+          const p=products.find(x=>x.id===productId);
+          if(status)status.textContent=p?`✓ ${p.name} اضافه و به فاکتور درج شد`:'کالا به فاکتور اضافه شد';
+          const box=root.querySelector<HTMLDivElement>('#invoiceProductSuggestions')||el<HTMLDivElement>('#invoiceProductSuggestions');
+          if(box)box.hidden=true;
+          // برگشت به برگه اقلام/فاکتور — مودال خودش بسته شده
+          const search=root.querySelector<HTMLInputElement>('#invoiceProductSearch')||el<HTMLInputElement>('#invoiceProductSearch');
+          if(search){search.value='';search.focus({preventScroll:true});}
+          toast('کالا تعریف شد و به اقلام فاکتور اضافه شد.','success');
+        },
+      });
+      return;
+    }
+    addProductToInvoice(product.id,true);
+    const suggestions=root.querySelector<HTMLDivElement>('#invoiceProductSuggestions')||el<HTMLDivElement>('#invoiceProductSuggestions');
+    if(suggestions)suggestions.hidden=true;
+    const status=root.querySelector<HTMLElement>('#invoiceScanStatus')||el<HTMLElement>('#invoiceScanStatus');
+    if(status)status.textContent=`✓ ${product.name} اضافه شد`;
+  };
+  // جلوگیری از دوبار بستن با clone و جایگزینی برای پاک‌سازی لیسنرهای قبلی
+  const rebindClick=(node:HTMLElement|null, handler:()=>void)=>{
+    if(!node)return;
+    const next=node.cloneNode(true) as HTMLElement;
+    node.parentNode?.replaceChild(next,node);
+    next.addEventListener('click',handler);
+    return next;
+  };
+  const freshAdd=rebindClick(addBtn,addBySearch) as HTMLButtonElement|undefined;
+  rebindClick(addLineBtn,()=>addInvoiceLine());
+  const freshSearch=(()=>{
+    if(!searchInput)return null;
+    const next=searchInput.cloneNode(true) as HTMLInputElement;
+    searchInput.parentNode?.replaceChild(next,searchInput);
+    next.addEventListener('input',()=>{suggestionIndex=0;renderInvoiceProductSuggestions(next.value,suggestionIndex)});
+    next.addEventListener('keydown',event=>{
+      const matches=invoiceProductMatches(next.value);
+      if(event.key==='ArrowDown'&&matches.length){event.preventDefault();suggestionIndex=Math.min(matches.length-1,suggestionIndex+1);renderInvoiceProductSuggestions(next.value,suggestionIndex)}
+      else if(event.key==='ArrowUp'&&matches.length){event.preventDefault();suggestionIndex=Math.max(0,suggestionIndex-1);renderInvoiceProductSuggestions(next.value,suggestionIndex)}
+      else if(event.key==='Enter'){event.preventDefault();const chosen=matches[suggestionIndex]||resolveInvoiceProduct(next.value);if(chosen)addProductToInvoice(chosen.id);else addBySearch();const box=el<HTMLDivElement>('#invoiceProductSuggestions');if(box)box.hidden=true;}
+      else if(event.key==='Escape'){const box=el<HTMLDivElement>('#invoiceProductSuggestions');if(box)box.hidden=true;}
+    });
+    next.addEventListener('focus',()=>{if(next.value.trim())renderInvoiceProductSuggestions(next.value,suggestionIndex)});
+    return next;
+  })();
+  rebindClick(scanBtn,()=>{
+    const continuous=el<HTMLInputElement>('#scannerContinuous');
+    (window as any).__anbarinScannerContinuousBeforeInvoice=continuous?.checked??true;
+    if(continuous)continuous.checked=true;
+    (window as any).__anbarinInvoiceScanActive=true;
+    openScanner({title:'اسکن پیوسته بارکد کالا برای فاکتور'});
+  });
+  // hint for empty catalog
+  if(!products.length){
+    const status=root.querySelector<HTMLElement>('#invoiceScanStatus')||el<HTMLElement>('#invoiceScanStatus');
+    if(status)status.textContent='کالایی در سیستم نیست؛ ابتدا در بخش کالاها تعریف کنید.';
+  }
+  void freshAdd; void freshSearch;
+}
+
 function openInvoiceItemsSheet():void {
- const placeholder=el<HTMLElement>('#invoiceItemsPlaceholder');if(!placeholder)return;
- document.getElementById('invoiceItemsSheet')?.remove();
- const overlay=document.createElement('div');overlay.id='invoiceItemsSheet';overlay.dir='rtl';overlay.style.cssText='position:fixed;inset:0;z-index:10045;background:var(--surface,#fff);color:var(--text,#222);overflow:auto;padding:clamp(12px,3vw,28px)';
- overlay.innerHTML=`<div style="max-width:1100px;margin:0 auto"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2>اقلام</h2><button class="btn btn-primary" id="invoiceItemsBack">تأیید</button></div><div id="invoiceItemsMount" style="margin-top:14px"></div></div>`;
- document.body.appendChild(overlay);
- const mount=overlay.querySelector<HTMLElement>('#invoiceItemsMount')!;
- ['.commerce-lines-head','.invoice-product-tools','#commerceInvoiceLines','#invoiceAddLine'].forEach(sel=>{const node=el<HTMLElement>(sel);if(node)mount.appendChild(node)});
- overlay.querySelector('#invoiceItemsBack')!.addEventListener('click',()=>{['.commerce-lines-head','.invoice-product-tools','#commerceInvoiceLines','#invoiceAddLine'].forEach(sel=>{const node=mount.querySelector<HTMLElement>(sel);if(node)placeholder.appendChild(node)});overlay.remove();updateInvoiceTotals();const count=document.querySelectorAll('#commerceInvoiceLines .commerce-line').length;const summary=el<HTMLElement>('#invoiceItemsSummary');if(summary)summary.textContent=count?`${fa(count)} قلم`:'';});
+  const scope=document.getElementById('commercePanelSheet')||document.getElementById('accountingCommerceWorkspace')||document;
+  const placeholder=(scope.querySelector('#invoiceItemsPlaceholder')||document.querySelector('#invoiceItemsPlaceholder')) as HTMLElement|null;
+  if(!placeholder){toast('فرم فاکتور هنوز آماده نیست.','error');return;}
+  document.getElementById('invoiceItemsSheet')?.remove();
+  const overlay=document.createElement('div');
+  overlay.id='invoiceItemsSheet';
+  overlay.dir='rtl';
+  overlay.style.cssText='position:fixed;inset:0;z-index:10120;background:var(--surface,#fff);color:var(--text,#222);overflow:auto;padding:clamp(12px,3vw,28px)';
+  overlay.innerHTML=`<div style="max-width:1100px;margin:0 auto"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2>اقلام فاکتور</h2><button class="btn btn-primary" id="invoiceItemsBack">تأیید و بازگشت</button></div><div id="invoiceItemsMount" style="margin-top:14px"></div></div>`;
+  document.body.appendChild(overlay);
+  const mount=overlay.querySelector<HTMLElement>('#invoiceItemsMount')!;
+  const pick=(sel:string)=> (scope.querySelector(sel)||document.querySelector(sel)) as HTMLElement|null;
+  ['.commerce-lines-head','.invoice-product-tools','#commerceInvoiceLines','#invoiceAddLine'].forEach(sel=>{const node=pick(sel);if(node)mount.appendChild(node);});
+  if(!mount.querySelector('#commerceInvoiceLines .commerce-line')){
+    addInvoiceLine();
+  }
+  // اتصال مجدد جستجوی هوشمند روی گره‌های منتقل‌شده
+  bindInvoiceProductSearch(mount);
+  const search=mount.querySelector<HTMLInputElement>('#invoiceProductSearch');
+  if(search){search.placeholder='نام کالا یا بارکد — جستجوی هوشمند';search.focus({preventScroll:true});}
+  overlay.querySelector('#invoiceItemsBack')!.addEventListener('click',()=>{
+    ['.commerce-lines-head','.invoice-product-tools','#commerceInvoiceLines','#invoiceAddLine'].forEach(sel=>{
+      const node=mount.querySelector<HTMLElement>(sel);if(node)placeholder.appendChild(node);
+    });
+    overlay.remove();
+    updateInvoiceTotals();
+    const count=document.querySelectorAll('#commerceInvoiceLines .commerce-line').length;
+    const summary=document.querySelector('#invoiceItemsSummary') as HTMLElement|null;
+    if(summary)summary.textContent=count?`${fa(count)} قلم`:'بدون قلم';
+  });
 }
 
 async function render():Promise<void> {
@@ -739,7 +869,7 @@ async function render():Promise<void> {
 <button type="button" class="btn btn-sm btn-secondary" id="invoiceAddParty" title="اگر شخص در فهرست نیست، اینجا تعریف کنید">+ شخص</button>
 </div>
 </label>
-<label class="field">تاریخ<div class="invoice-jalali-date"><input id="invoiceDate" value="${todayJalali()}" placeholder="۱۴۰۵/۰۱/۰۱" autocomplete="off" inputmode="numeric"><button type="button" class="btn btn-secondary" id="invoiceJalaliCalendar" aria-label="تقویم" title="تقویم شمسی">▦</button></div><div id="invoiceJalaliCalendarPanel" class="invoice-jalali-calendar" hidden></div></label>
+<label class="field">تاریخ<div class="invoice-jalali-date"><input id="invoiceDate" value="${todayJalali()}" placeholder="1405/01/01" autocomplete="off" inputmode="numeric"><button type="button" class="btn btn-secondary" id="invoiceJalaliCalendar" aria-label="تقویم" title="تقویم شمسی">▦</button></div><div id="invoiceJalaliCalendarPanel" class="invoice-jalali-calendar" hidden></div></label>
 <input type="hidden" id="invoicePaymentTerms" value=""><select hidden aria-hidden="true"></select><input type="hidden" id="invoiceDescription">
 </div>
 
@@ -791,7 +921,7 @@ async function render():Promise<void> {
     ${activeCommerceSection==='management'?await cashflowPanel():''}
   </section>
   <section data-commerce-section="inventory" ${activeCommerceSection==='inventory'?'':'hidden'}>
-    ${activeCommerceSection==='inventory'?`<div class="card" style="margin-top:14px"><h3>ارزش‌گذاری موجودی اولیه</h3><p class="hint">برای کالاهایی که پیش از راه‌اندازی حسابداری موجودی دارند، بهای واحد واقعی موجودی در تاریخ شروع را در این بخش ثبت کنید. این عملیات مستقل از فاکتور خرید است و تا پیش از ارزش‌گذاری، فروش آن کالا قطعی نمی‌شود تا بهای تمام‌شده اشتباه صفر ثبت نشود.</p><div class="form-grid"><label class="field">کالا<select id="openingCostProduct"><option value="">انتخاب کالا</option>${productOptions()}</select></label><label class="field">تعداد موجودی فعلی<input id="openingCostQty" inputmode="decimal" placeholder="از موجودی سیستم"></label><label class="field">بهای واحد (${currency==='toman'?'تومان':'ریال'})<input id="openingCostUnit" inputmode="numeric"></label><label class="field">تاریخ ارزش‌گذاری شمسی<input id="openingCostDate" placeholder="۱۴۰۵/۰۱/۰۱"></label></div><button class="btn btn-secondary" id="openingCostSave">ثبت بهای موجودی اولیه</button></div>`:''}
+    ${activeCommerceSection==='inventory'?`<div class="card" style="margin-top:14px"><h3>ارزش‌گذاری موجودی اولیه</h3><p class="hint">برای کالاهایی که پیش از راه‌اندازی حسابداری موجودی دارند، بهای واحد واقعی موجودی در تاریخ شروع را در این بخش ثبت کنید. این عملیات مستقل از فاکتور خرید است و تا پیش از ارزش‌گذاری، فروش آن کالا قطعی نمی‌شود تا بهای تمام‌شده اشتباه صفر ثبت نشود.</p><div class="form-grid"><label class="field">کالا<select id="openingCostProduct"><option value="">انتخاب کالا</option>${productOptions()}</select></label><label class="field">تعداد موجودی فعلی<input id="openingCostQty" inputmode="decimal" placeholder="از موجودی سیستم"></label><label class="field">بهای واحد (${currency==='toman'?'تومان':'ریال'})<input id="openingCostUnit" inputmode="numeric"></label><label class="field">تاریخ ارزش‌گذاری شمسی<input id="openingCostDate" placeholder="1405/01/01"></label></div><button class="btn btn-secondary" id="openingCostSave">ثبت بهای موجودی اولیه</button></div>`:''}
     ${activeCommerceSection==='inventory'?await inventoryReconciliationPanel():''}
   </section>
   <section data-commerce-section="receipts" ${activeCommerceSection==='receipts'?'':'hidden'}>
@@ -804,13 +934,13 @@ async function render():Promise<void> {
 <label class="field">روش<select id="cashMethod"><option value="cash">نقدی</option><option value="bank">بانک</option><option value="card">کارت</option><option value="transfer">حواله</option><option value="cheque">چک</option></select></label>
 <label class="field">حساب<select id="cashAccount"><option value="">صندوق / بانک</option>${accountOptions()}</select></label>
 <label class="field">فاکتور<select id="cashInvoice"><option value="">بدون تخصیص</option></select></label>
-<label class="field">تاریخ<input id="cashDate" placeholder="۱۴۰۵/۰۱/۰۱"></label>
+<label class="field">تاریخ<input id="cashDate" placeholder="1405/01/01"></label>
 <label class="field">مبلغ<input id="cashAmount" inputmode="decimal" placeholder="۰"></label>
 <input type="hidden" id="cashAllocation" value="">
 <input type="hidden" id="cashDescription" value="">
 <label class="field" data-cheque-field hidden>شماره چک<input id="cashChequeNumber"></label>
 <label class="field" data-cheque-field hidden>بانک<input id="cashChequeBank"></label>
-<label class="field" data-cheque-field hidden>سررسید چک<input id="cashChequeDue" placeholder="۱۴۰۵/۰۱/۳۰"></label>
+<label class="field" data-cheque-field hidden>سررسید چک<input id="cashChequeDue" placeholder="1405/01/30"></label>
 </div>
 <button class="btn btn-primary" id="cashSave" type="button">ثبت</button>
 <div class="table-wrap" style="margin-top:14px"><table class="data-table"><thead><tr><th>شماره</th><th>نوع</th><th>طرف</th><th>تاریخ</th><th>مبلغ</th><th>وضعیت</th><th></th></tr></thead><tbody>${cashRows()}</tbody></table></div>
@@ -869,6 +999,7 @@ function startInvoiceEdit(invoiceId:string):void {
 function cancelInvoiceEdit():void {editingInvoiceId=null;render()}
 
 function bind():void {
+  queueMicrotask(()=>enhanceDateFields(document));
   const updateMonthComparison=()=>{const first=el<HTMLSelectElement>('#managementCompareFirst')?.value||'';const second=el<HTMLSelectElement>('#managementCompareSecond')?.value||'';const host=el<HTMLDivElement>('#managementMonthComparison');if(!host)return;const metrics=[['فروش قطعی','salesRial'],['سود ناخالص','grossProfitRial'],['هزینه ثبت‌شده گروه ۶','expensesRial'],['دریافت قطعی','receiptsRial'],['پرداخت قطعی','paymentsRial'],['مانده فعلی مطالبات','receivableRial']] as const;const rows=(window as any).__anbarinManagementCompareRows as Array<Record<string,any>>|undefined;const a=rows?.find(x=>x.month===first),b=rows?.find(x=>x.month===second);if(!a||!b){host.innerHTML='<p class="hint">برای مقایسه، داده ماهانه کافی وجود ندارد.</p>';return;}host.innerHTML=`<div class="table-wrap"><table class="data-table"><thead><tr><th>شاخص</th><th>${first}</th><th>${second}</th><th>اختلاف (ماه دوم − اول)</th><th>تغییر درصدی</th></tr></thead><tbody>${metrics.map(([label,key])=>{const av=Number(a[key]||0),bv=Number(b[key]||0),delta=bv-av,pct=av===0?null:delta/Math.abs(av)*100;return `<tr><td>${label}</td><td>${money(av)}</td><td>${money(bv)}</td><td>${delta>0?'+':''}${money(delta)}</td><td>${pct===null?'—':`${pct>0?'+':''}${pct.toFixed(1)}٪`}</td></tr>`}).join('')}</tbody></table></div><p class="hint">درصد تغییر نسبت به ماه اول محاسبه می‌شود؛ اگر مقدار ماه اول صفر باشد، درصد تغییر قابل محاسبه نیست.</p>`;};
   document.querySelectorAll<HTMLSelectElement>('#managementCompareFirst,#managementCompareSecond').forEach(select=>select.addEventListener('change',updateMonthComparison));
   el<HTMLSelectElement>('#managementAnomalyThreshold')?.addEventListener('change',()=>{const threshold=Number(el<HTMLSelectElement>('#managementAnomalyThreshold')?.value||20);const host=el<HTMLDivElement>('#managementAnomalyAlerts');if(!host)return;const rows=(window as any).__anbarinManagementCompareRows as ManagementMonthRow[]|undefined;const alerts=detectManagementMonthAnomalies(rows||[],threshold);host.innerHTML=alerts.length?`<div class="table-wrap"><table class="data-table"><thead><tr><th>وضعیت</th><th>شاخص</th><th>بازه مقایسه</th><th>مقدار قبلی</th><th>مقدار جدید</th><th>تغییر</th></tr></thead><tbody>${alerts.map(a=>`<tr><td>${a.severity==='warning'?'نیازمند بررسی':'بهبود'}</td><td>${a.label}</td><td>${esc(a.previousMonth)} ← ${esc(a.month)}</td><td>${money(a.previousValue)}</td><td>${money(a.currentValue)}</td><td>${a.percentChange>0?'+':''}${a.percentChange.toFixed(1)}٪</td></tr>`).join('')}</tbody></table></div><p class="hint">کاهش فروش/سود/دریافت و افزایش هزینه/پرداخت/مطالبات نیازمند بررسی است.</p>`:'<p class="hint">در آستانه انتخابی تغییر غیرعادی معناداری پیدا نشد؛ ماه‌های با مبنای صفر برای جلوگیری از درصد گمراه‌کننده نادیده گرفته می‌شوند.</p>'});
@@ -976,29 +1107,12 @@ function bind():void {
     render().then(()=>el<HTMLElement>('#partyFormGrid')?.scrollIntoView({behavior:'smooth',block:'start'}));
   }));
   el<HTMLInputElement>('#invoiceDescriptionVisible')?.addEventListener('input',event=>{const hidden=el<HTMLInputElement>('#invoiceDescription');if(hidden)hidden.value=(event.target as HTMLInputElement).value;});
-  el<HTMLButtonElement>('#invoiceAddLine')?.addEventListener('click',()=>addInvoiceLine());
   const previousInvoiceScanHandler=(window as any).__anbarinInvoiceBarcodeHandler as EventListener|undefined;
   if(previousInvoiceScanHandler)window.removeEventListener('anbarin:invoice-barcode-scan',previousInvoiceScanHandler);
-  const invoiceScanHandler:EventListener=(event:Event)=>{const detail=(event as CustomEvent<{code:string}>).detail;const code=digits(detail?.code||'').trim();const product=findProductByCode(code);const status=el<HTMLElement>('#invoiceScanStatus');if(product){addProductToInvoice(product.id,true);if(status)status.textContent=`✓ ${product.name} اضافه شد`}else{if(status)status.textContent=`بارکد ${code} پیدا نشد`;toast(`کالایی با بارکد ${code} پیدا نشد.`,'error');el<HTMLInputElement>('#invoiceProductSearch')?.focus({preventScroll:true})}};
+  const invoiceScanHandler:EventListener=(event:Event)=>{const detail=(event as CustomEvent<{code:string}>).detail;const code=digits(detail?.code||'').trim();const product=findProductByCode(code);const status=el<HTMLElement>('#invoiceScanStatus');if(product){addProductToInvoice(product.id,true);if(status)status.textContent=`✓ ${product.name} اضافه شد`}else{if(status)status.textContent=`بارکد ${code} پیدا نشد`;offerAddProduct(code,{asName:false,onSaved:(productId)=>{addProductToInvoice(productId,true);const p=products.find(x=>x.id===productId);if(status)status.textContent=p?`✓ ${p.name} اضافه شد`:'کالا اضافه شد';}});}};
   (window as any).__anbarinInvoiceBarcodeHandler=invoiceScanHandler;window.addEventListener('anbarin:invoice-barcode-scan',invoiceScanHandler);
-  const searchInput=el<HTMLInputElement>('#invoiceProductSearch');let suggestionIndex=0;
-  const addBySearch=()=>{
-    const value=(searchInput?.value||'').trim();
-    if(!value){toast('نام کالا یا بارکد را وارد کنید.','error');return;}
-    const byCode=findProductByCode(digits(value));
-    const product=byCode||resolveInvoiceProduct(value);
-    if(!product){toast('کالا پیدا نشد. نام دقیق‌تر یا بارکد صحیح وارد کنید.','error');return;}
-    addProductToInvoice(product.id,true);
-    const suggestions=el<HTMLDivElement>('#invoiceProductSuggestions');
-    if(suggestions)suggestions.hidden=true;
-    const status=el<HTMLElement>('#invoiceScanStatus');
-    if(status)status.textContent=`✓ ${product.name} اضافه شد`;
-  };
-  el<HTMLButtonElement>('#invoiceProductAdd')?.addEventListener('click',addBySearch);
-  searchInput?.addEventListener('input',()=>{suggestionIndex=0;renderInvoiceProductSuggestions(searchInput.value,suggestionIndex)});
-  searchInput?.addEventListener('keydown',event=>{const matches=invoiceProductMatches(searchInput.value);if(event.key==='ArrowDown'&&matches.length){event.preventDefault();suggestionIndex=Math.min(matches.length-1,suggestionIndex+1);renderInvoiceProductSuggestions(searchInput.value,suggestionIndex)}else if(event.key==='ArrowUp'&&matches.length){event.preventDefault();suggestionIndex=Math.max(0,suggestionIndex-1);renderInvoiceProductSuggestions(searchInput.value,suggestionIndex)}else if(event.key==='Enter'){event.preventDefault();const chosen=matches[suggestionIndex]||resolveInvoiceProduct(searchInput.value);if(chosen)addProductToInvoice(chosen.id);else addBySearch();const box=el<HTMLDivElement>('#invoiceProductSuggestions');if(box)box.hidden=true;}else if(event.key==='Escape'){const box=el<HTMLDivElement>('#invoiceProductSuggestions');if(box)box.hidden=true;}});
+  bindInvoiceProductSearch(document);
   document.addEventListener('click',event=>{if(!(event.target as HTMLElement).closest('.invoice-live-search')){const box=el<HTMLDivElement>('#invoiceProductSuggestions');if(box)box.hidden=true;}});
-  el<HTMLButtonElement>('#invoiceScanOpen')?.addEventListener('click',()=>{const continuous=el<HTMLInputElement>('#scannerContinuous');(window as any).__anbarinScannerContinuousBeforeInvoice=continuous?.checked??true;if(continuous)continuous.checked=true;(window as any).__anbarinInvoiceScanActive=true;openScanner({title:'اسکن پیوسته بارکد کالا برای فاکتور'})});
   const invoiceDateInput=el<HTMLInputElement>('#invoiceDate');const invoiceCalendarPanel=el<HTMLDivElement>('#invoiceJalaliCalendarPanel');let calendarYear=Number(todayJalali().split('/')[0]),calendarMonth=Number(todayJalali().split('/')[1]);
   const jalaliParts=(date:Date)=>{const p=new Intl.DateTimeFormat('en-US-u-ca-persian-nu-latn',{year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(date);return {y:Number(p.find(x=>x.type==='year')?.value),m:Number(p.find(x=>x.type==='month')?.value),d:Number(p.find(x=>x.type==='day')?.value)}};
   const renderInvoiceJalaliCalendar=()=>{

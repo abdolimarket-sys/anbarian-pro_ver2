@@ -10,6 +10,7 @@ import { loadCommerceData, saveCommerceData } from './accounting-commerce';
 import { loadInventoryCostData, saveInventoryCostData } from './inventory-costing';
 import { downloadFile, dateStr } from '@/utils/helpers';
 import { toast } from './ui';
+import { enhanceDateFields } from './date-picker';
 
 let data: AccountingData | null = null;
 let activeAccountingTab: string | null = null;
@@ -185,9 +186,9 @@ function render(): void {
         <label class="field">سال مالی فعال (برای تمام ثبت‌ها)<select id="fyActive">${acc.fiscalPeriods.filter(p=>p.status==='open').map(p=>`<option value="${p.id}" ${acc.settings.activeFiscalPeriodId===p.id?'selected':''}>${esc(p.title)}</option>`).join('')||'<option value="">سال باز تعریف نشده</option>'}</select></label>
         <button class="btn btn-primary" id="fySetActive" type="button" style="margin-top:8px">اعمال سال فعال</button>
         <hr style="margin:16px 0;border:0;border-top:1px solid var(--border-color,#e2e8f0)">
-        <div class="form-grid"><label class="field">عنوان<input id="fyTitle" placeholder="مثلاً سال مالی ۱۴۰۵"></label><label class="field">تاریخ شروع<input id="fyStart" placeholder="۱۴۰۵/۰۱/۰۱"></label><label class="field">تاریخ پایان<input id="fyEnd" placeholder="۱۴۰۵/۱۲/۲۹"></label></div><button class="btn btn-primary" id="fyCreate">ایجاد سال مالی</button>${renderPeriods()}</div>
+        <div class="form-grid"><label class="field">عنوان<input id="fyTitle" placeholder="مثلاً سال مالی ۱۴۰۵"></label><label class="field">تاریخ شروع<input id="fyStart" placeholder="1405/01/01" inputmode="numeric" autocomplete="off"></label><label class="field">تاریخ پایان<input id="fyEnd" placeholder="1405/12/29" inputmode="numeric" autocomplete="off"></label></div><button class="btn btn-primary" id="fyCreate">ایجاد سال مالی</button>${renderPeriods()}</div>
       </section>
-      <section class="acc-section" data-acc-section="journals" hidden><div class="card accounting-inner-card"><h3>سند حسابداری</h3><div class="form-grid"><label class="field">شماره سند<input id="jeNumber" placeholder="مثلاً ۱۰۰۱"></label><label class="field">تاریخ شمسی<input id="jeDate" placeholder="۱۴۰۵/۰۱/۰۱"></label><label class="field">شرح سند<input id="jeDescription" placeholder="شرح مختصر"></label></div><div class="accounting-voucher-head"><strong>آرتیکل‌های سند</strong><span class="hint">هر سند می‌تواند چندین ردیف بدهکار و بستانکار داشته باشد.</span></div><div id="jeLines" class="accounting-voucher-lines">${renderJournalLineEditor(2)}</div><div class="actions"><button type="button" class="btn btn-secondary" id="jeAddLine">افزودن ردیف</button><span id="jeTotals" class="hint">جمع بدهکار و بستانکار: ۰</span></div><button class="btn btn-primary" id="jeSave">ثبت پیش‌نویس سند</button>${renderJournals()}</div></section>
+      <section class="acc-section" data-acc-section="journals" hidden><div class="card accounting-inner-card"><h3>سند حسابداری</h3><div class="form-grid"><label class="field">شماره سند<input id="jeNumber" placeholder="مثلاً ۱۰۰۱"></label><label class="field">تاریخ شمسی<input id="jeDate" placeholder="1405/01/01" inputmode="numeric" autocomplete="off"></label><label class="field">شرح سند<input id="jeDescription" placeholder="شرح مختصر"></label></div><div class="accounting-voucher-head"><strong>آرتیکل‌های سند</strong><span class="hint">هر سند می‌تواند چندین ردیف بدهکار و بستانکار داشته باشد.</span></div><div id="jeLines" class="accounting-voucher-lines">${renderJournalLineEditor(2)}</div><div class="actions"><button type="button" class="btn btn-secondary" id="jeAddLine">افزودن ردیف</button><span id="jeTotals" class="hint">جمع بدهکار و بستانکار: ۰</span></div><button class="btn btn-primary" id="jeSave">ثبت پیش‌نویس سند</button>${renderJournals()}</div></section>
     </div>`;
   // keep external workspaces hidden on home
   const commerce = el<HTMLElement>('#accountingCommerceWorkspace');
@@ -203,6 +204,8 @@ function bindJournalLineEvents(): void {
   document.querySelectorAll<HTMLInputElement>('[data-je-debit], [data-je-credit]').forEach(input=>input.addEventListener('input',updateJournalTotals));
 }
 function bind(): void {
+  // بعد از ساخت DOM، تقویم شمسی یکدست به فیلدهای تاریخ وصل می‌شود
+  queueMicrotask(() => enhanceDateFields(document));
   document.querySelectorAll<HTMLButtonElement>('[data-acc-tab]').forEach(button => button.addEventListener('click',()=>{
     const tabId=button.dataset.accTab||'commerce';
     openAccountingModuleSheet(tabId);
