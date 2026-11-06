@@ -742,7 +742,23 @@ select.search-input {
 
 .commerce-invoice-card .commerce-lines-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:18px 0 8px;padding-bottom:8px;border-bottom:1px solid var(--border-color,#d8dee8)}
 .commerce-invoice-card .commerce-line{grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px;margin:8px 0}
-.commerce-invoice-card .commerce-line [readonly]{background:var(--surface-muted,#f4f6f8);font-weight:700}
+.commerce-invoice-card .commerce-line [readonly]:not([data-line-total]){background:var(--surface-muted,#f4f6f8);font-weight:600;color:var(--text,#1f2937)}
+.commerce-invoice-card .commerce-line [data-line-total],
+#accountingCommerceWorkspace .commerce-line [data-line-total],
+#invoiceItemsSheet .commerce-line [data-line-total]{
+  font-weight:800!important;
+  color:#0f172a!important;
+  background:#e0f2fe!important;
+  border:1px solid #7dd3fc!important;
+  letter-spacing:.02em;
+}
+[data-theme='dark'] .commerce-invoice-card .commerce-line [data-line-total],
+[data-theme='dark'] #accountingCommerceWorkspace .commerce-line [data-line-total],
+[data-theme='dark'] #invoiceItemsSheet .commerce-line [data-line-total]{
+  color:#f8fafc!important;
+  background:#0c4a6e!important;
+  border-color:#38bdf8!important;
+}
 .commerce-invoice-summary{max-width:520px;margin:14px 0 14px auto;padding:12px;border:1px solid var(--border-color,#d8dee8);border-radius:10px}
 .commerce-invoice-summary>div{display:flex;justify-content:space-between;gap:12px;padding:7px 2px;border-bottom:1px solid var(--border-color,#e5e7eb)}
 .commerce-invoice-summary>div:last-child{border-bottom:0}
@@ -775,10 +791,15 @@ select.search-input {
 #accountingCommerceWorkspace .commerce-invoice-card>h3{margin-top:0;padding-bottom:12px;border-bottom:1px solid var(--border-color,#d8dee8)}
 #accountingCommerceWorkspace .commerce-invoice-card .form-grid{gap:14px}
 #accountingCommerceWorkspace .commerce-invoice-card .field input,#accountingCommerceWorkspace .commerce-invoice-card .field select,#accountingCommerceWorkspace .commerce-invoice-card .field textarea{min-height:42px;border-radius:9px}
-#accountingCommerceWorkspace .commerce-parties-panel{padding:14px 16px;border:1px solid var(--border-color,#d8dee8);border-radius:14px}
-#accountingCommerceWorkspace .commerce-parties-panel>summary{cursor:pointer;font-weight:750;list-style-position:inside}
-#accountingCommerceWorkspace .commerce-parties-panel[open]>summary{margin-bottom:14px}
 #accountingCommerceWorkspace .commerce-invoice-card .data-table th{white-space:nowrap}
+
+#accountingCommerceWorkspace .commerce-line input[data-line-desc][readonly],
+#invoiceItemsSheet .commerce-line input[data-line-desc][readonly]{
+  background:var(--surface-muted,#f5f7fa);
+  color:var(--text-muted,#555);
+  cursor:default;
+}
+
 @media(max-width:640px){#accountingCommerceWorkspace .commerce-page-header{align-items:flex-start;padding:14px}#accountingCommerceWorkspace .commerce-section-nav .btn{flex:1;min-width:0}}
 
 
@@ -1083,8 +1104,15 @@ details[open] > .category-summary .category-chevron { transform: rotate(180deg);
 }
 #invoiceItemsSheet .invoice-line-total-field input {
   font-weight: 800;
-  color: var(--primary-deeper);
-  background: var(--primary-soft);
+  color: #0f172a !important;
+  background: #e0f2fe !important;
+  border: 1px solid #7dd3fc !important;
+  letter-spacing: 0.02em;
+}
+[data-theme='dark'] #invoiceItemsSheet .invoice-line-total-field input {
+  color: #f8fafc !important;
+  background: #0c4a6e !important;
+  border-color: #38bdf8 !important;
 }
 #invoiceItemsSheet .invoice-line-remove {
   justify-self: start;
@@ -1109,4 +1137,363 @@ details[open] > .category-summary .category-chevron { transform: rotate(180deg);
 }
 @media (max-width: 420px) {
   #invoiceItemsSheet .invoice-line-card { grid-template-columns: 1fr; }
+}
+
+#accountingCommerceWorkspace .invoice-product-tools-compact{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto auto;
+  gap:10px;
+  align-items:end;
+}
+#accountingCommerceWorkspace .invoice-product-tools-compact .invoice-live-search{min-width:0}
+#accountingCommerceWorkspace .invoice-product-tools-compact #invoiceScanStatus{grid-column:1/-1;min-height:1.2em}
+#accountingCommerceWorkspace .invoice-line-product-name,
+#invoiceItemsSheet .invoice-line-product-name{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  padding:8px 10px;border-radius:8px;background:var(--surface-muted,#f5f7fa);
+  border:1px solid var(--border-color,#e0e4ea);margin:0;
+}
+#accountingCommerceWorkspace .invoice-product-badge,
+#invoiceItemsSheet .invoice-product-badge{
+  font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;
+  background:var(--primary,#2563eb);color:#fff;
+}
+@media(max-width:560px){
+  #accountingCommerceWorkspace .invoice-product-tools-compact{grid-template-columns:1fr}
+  #accountingCommerceWorkspace .invoice-product-tools-compact .btn{width:100%}
+}
+
+/* —— Invoice line cards: neat & readable —— */
+#accountingCommerceWorkspace .commerce-line.invoice-line-card,
+#invoiceItemsSheet .commerce-line.invoice-line-card{
+  border:1px solid var(--border-color,#d8dee8)!important;
+  border-inline-start:4px solid var(--primary,#2563eb)!important;
+  border-radius:12px!important;
+  padding:14px!important;
+  margin:10px 0!important;
+  background:var(--surface,#fff)!important;
+  box-shadow:0 1px 3px rgba(15,23,42,.06);
+}
+#accountingCommerceWorkspace .invoice-line-heading,
+#invoiceItemsSheet .invoice-line-heading{
+  grid-column:1/-1;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  font-weight:800;
+  color:var(--text,#0f172a);
+  padding-bottom:8px;
+  margin-bottom:2px;
+  border-bottom:1px solid var(--border-color,#e8ecf1);
+}
+#accountingCommerceWorkspace .invoice-line-number,
+#invoiceItemsSheet .invoice-line-number{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:56px;
+  padding:3px 10px;
+  border-radius:999px;
+  background:#dbeafe;
+  color:#1e3a8a;
+  font-size:.78rem;
+  font-weight:800;
+}
+[data-theme='dark'] #accountingCommerceWorkspace .invoice-line-number,
+[data-theme='dark'] #invoiceItemsSheet .invoice-line-number{
+  background:#1e3a8a;
+  color:#e0f2fe;
+}
+#accountingCommerceWorkspace .invoice-line-product-name,
+#invoiceItemsSheet .invoice-line-product-name{
+  grid-column:1/-1;
+}
+#accountingCommerceWorkspace .invoice-product-tools-compact,
+#invoiceItemsSheet .invoice-product-tools{
+  padding:12px;
+  border:1px solid var(--border-color,#d8dee8);
+  border-radius:12px;
+  background:var(--surface-muted,#f8fafc);
+  margin:8px 0 12px;
+}
+#accountingCommerceWorkspace .commerce-lines-head,
+#invoiceItemsSheet .commerce-lines-head{
+  margin-top:4px;
+}
+#accountingCommerceWorkspace .invoice-line-total-field,
+#invoiceItemsSheet .invoice-line-total-field{
+  font-weight:700;
+}
+
+#accountingCommerceWorkspace .invoice-details-panel{padding:14px 16px;border-radius:12px}
+#accountingCommerceWorkspace .invoice-details-panel>summary{font-weight:750;cursor:pointer}
+#accountingCommerceWorkspace .invoice-details-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 14px}
+#accountingCommerceWorkspace .invoice-details-grid .field:has(textarea){grid-column:1/-1}
+@media(max-width:560px){#accountingCommerceWorkspace .invoice-details-grid{grid-template-columns:1fr}}
+
+/* —— Invoice form polish —— */
+#accountingCommerceWorkspace .commerce-invoice-card{
+  padding:18px 18px 14px;
+  border:1px solid var(--border-color,#d8dee8);
+  border-radius:16px;
+  background:var(--surface,#fff);
+  box-shadow:0 1px 4px rgba(15,23,42,.05);
+}
+#accountingCommerceWorkspace .commerce-invoice-card>h3{
+  margin:0 0 14px;
+  padding-bottom:12px;
+  border-bottom:1px solid var(--border-color,#e8ecf1);
+  font-size:1.15rem;
+}
+#accountingCommerceWorkspace .invoice-header-grid{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:12px 14px;
+  margin-bottom:16px;
+}
+@media(max-width:700px){
+  #accountingCommerceWorkspace .invoice-header-grid{grid-template-columns:1fr}
+}
+#accountingCommerceWorkspace .invoice-items-block{
+  padding:14px;
+  border:1px solid var(--border-color,#e2e8f0);
+  border-radius:14px;
+  background:var(--surface-muted,#f8fafc);
+  margin:4px 0 12px;
+}
+#accountingCommerceWorkspace .invoice-items-block .commerce-lines-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  margin:0 0 10px;
+  padding:0;
+  border:0;
+}
+#accountingCommerceWorkspace .invoice-action-bar{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+  margin:14px 0 16px;
+}
+#accountingCommerceWorkspace .commerce-invoice-summary{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:10px;
+  margin:14px 0 4px;
+  padding:12px 14px;
+  border-radius:12px;
+  border:1px solid var(--border-color,#e2e8f0);
+  background:var(--surface-muted,#f8fafc);
+}
+#accountingCommerceWorkspace .commerce-invoice-summary>div{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+#accountingCommerceWorkspace .commerce-invoice-summary .grand b{
+  font-size:1.1rem;
+  color:#0f172a;
+}
+[data-theme='dark'] #accountingCommerceWorkspace .commerce-invoice-summary .grand b{color:#f8fafc}
+@media(max-width:560px){
+  #accountingCommerceWorkspace .commerce-invoice-summary{grid-template-columns:1fr}
+}
+
+#accountingCommerceWorkspace .invoice-items-toolbar{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px;
+}
+#accountingCommerceWorkspace .invoice-items-toolbar b{font-size:1rem}
+
+.accounting-home-links{
+  display:flex;flex-wrap:wrap;gap:10px;margin-top:16px;
+}
+.accounting-home-stats{margin-top:4px}
+
+
+/* ========== Accounting: RTL + polished cards ========== */
+#accountingWorkspace{
+  direction:rtl;
+  text-align:right;
+}
+#accountingWorkspace .accounting-shortcuts{
+  direction:rtl;
+  text-align:right;
+  gap:8px;
+  padding:8px;
+  border-radius:14px;
+  border:1px solid var(--border-color,#e2e8f0);
+  background:var(--surface-muted,#f8fafc);
+}
+#accountingWorkspace .accounting-shortcut{
+  border-radius:12px;
+  min-height:68px;
+  font-weight:700;
+}
+#accountingWorkspace .acc-section,
+#accountingCommerceWorkspace,
+#accountingReportsWorkspace{
+  direction:rtl;
+  text-align:right;
+}
+#accountingWorkspace .card,
+#accountingWorkspace .accounting-inner-card,
+#accountingCommerceWorkspace .card,
+#accountingReportsWorkspace .card{
+  direction:rtl;
+  text-align:right;
+  border:1px solid var(--border-color,#e2e8f0);
+  border-radius:14px;
+  padding:16px 18px;
+  background:var(--surface,#fff);
+  box-shadow:0 1px 3px rgba(15,23,42,.05);
+  margin-top:12px;
+}
+#accountingWorkspace .card h3,
+#accountingWorkspace .accounting-inner-card h3,
+#accountingCommerceWorkspace .card h3,
+#accountingReportsWorkspace .card h3{
+  margin:0 0 12px;
+  padding-bottom:10px;
+  border-bottom:1px solid var(--border-color,#e8ecf1);
+  font-size:1.05rem;
+  font-weight:800;
+  text-align:right;
+}
+#accountingWorkspace .form-grid,
+#accountingCommerceWorkspace .form-grid,
+#accountingReportsWorkspace .form-grid{
+  direction:rtl;
+  text-align:right;
+}
+#accountingWorkspace .field,
+#accountingCommerceWorkspace .field,
+#accountingReportsWorkspace .field{
+  text-align:right;
+  direction:rtl;
+}
+#accountingWorkspace .field input,
+#accountingWorkspace .field select,
+#accountingWorkspace .field textarea,
+#accountingCommerceWorkspace .field input,
+#accountingCommerceWorkspace .field select,
+#accountingCommerceWorkspace .field textarea,
+#accountingReportsWorkspace .field input,
+#accountingReportsWorkspace .field select,
+#accountingReportsWorkspace .field textarea{
+  text-align:right;
+  direction:rtl;
+  border-radius:10px;
+  min-height:40px;
+}
+#accountingWorkspace .field input[inputmode=numeric],
+#accountingWorkspace .field input[inputmode=decimal],
+#accountingCommerceWorkspace .field input[inputmode=numeric],
+#accountingCommerceWorkspace .field input[inputmode=decimal]{
+  direction:ltr;
+  text-align:left;
+}
+#accountingWorkspace .data-table,
+#accountingCommerceWorkspace .data-table,
+#accountingReportsWorkspace .data-table{
+  width:100%;
+  border-collapse:collapse;
+  text-align:right;
+  direction:rtl;
+}
+#accountingWorkspace .data-table th,
+#accountingWorkspace .data-table td,
+#accountingCommerceWorkspace .data-table th,
+#accountingCommerceWorkspace .data-table td,
+#accountingReportsWorkspace .data-table th,
+#accountingReportsWorkspace .data-table td{
+  text-align:right;
+  padding:10px 12px;
+  border-bottom:1px solid var(--border-color,#e8ecf1);
+}
+#accountingWorkspace .data-table th,
+#accountingCommerceWorkspace .data-table th,
+#accountingReportsWorkspace .data-table th{
+  font-weight:800;
+  background:var(--surface-muted,#f8fafc);
+}
+#accountingWorkspace .table-wrap,
+#accountingCommerceWorkspace .table-wrap,
+#accountingReportsWorkspace .table-wrap{
+  border:1px solid var(--border-color,#e2e8f0);
+  border-radius:12px;
+  overflow:auto;
+  margin-top:12px;
+  background:var(--surface,#fff);
+}
+#accountingWorkspace .stats-grid,
+#accountingCommerceWorkspace .stats-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+  gap:12px;
+  margin:12px 0;
+  direction:rtl;
+}
+#accountingWorkspace .stat-card,
+#accountingCommerceWorkspace .stat-card{
+  text-align:right;
+  padding:14px 16px;
+  border-radius:12px;
+  border:1px solid var(--border-color,#e2e8f0);
+  background:var(--surface,#fff);
+  box-shadow:0 1px 2px rgba(15,23,42,.04);
+}
+#accountingWorkspace .stat-card span,
+#accountingCommerceWorkspace .stat-card span{
+  display:block;
+  color:var(--text-muted,#64748b);
+  font-size:.85rem;
+  margin-bottom:6px;
+}
+#accountingWorkspace .stat-card strong,
+#accountingWorkspace .stat-card b,
+#accountingCommerceWorkspace .stat-card strong,
+#accountingCommerceWorkspace .stat-card b{
+  font-size:1.2rem;
+  font-weight:800;
+}
+#accountingWorkspace .accounting-home-links{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  margin-top:16px;
+  justify-content:flex-start;
+  direction:rtl;
+}
+#accountingWorkspace .hint,
+#accountingCommerceWorkspace .hint,
+#accountingReportsWorkspace .hint{
+  text-align:right;
+  color:var(--text-muted,#64748b);
+}
+#accountingCommerceWorkspace .commerce-section-nav{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  direction:rtl;
+  margin:8px 0 14px;
+}
+#accountingCommerceWorkspace .commerce-page-header{
+  direction:rtl;
+  text-align:right;
+}
+#accountingCommerceWorkspace .commerce-invoice-summary,
+#accountingCommerceWorkspace .invoice-action-bar,
+#accountingCommerceWorkspace .invoice-items-toolbar{
+  direction:rtl;
+  text-align:right;
+}
+#accountingWorkspace .btn,
+#accountingCommerceWorkspace .btn,
+#accountingReportsWorkspace .btn{
+  border-radius:10px;
+}
+@media(max-width:640px){
+  #accountingWorkspace .accounting-shortcuts{grid-template-columns:repeat(2,minmax(0,1fr));}
+  #accountingWorkspace .stats-grid{grid-template-columns:1fr 1fr;}
 }

@@ -1,8 +1,8 @@
-/** رابط فاکتورها، اشخاص و دریافت/پرداخت */
+/** رابط فاکتورها و دریافت/پرداخت */
 import { loadAccountingData, parseMoneyToRial, formatMoneyFromRial } from './accounting';
 import {
-  loadCommerceData, saveCommerceData, upsertParty, buildInvoice, updateDraftInvoice, postInvoice,
-  createCashTransaction, partyBalance, ensureCommerceAccounts, updateChequeStatus, invoiceOutstanding,
+  loadCommerceData, saveCommerceData, buildInvoice, updateDraftInvoice, postInvoice,
+  createCashTransaction, ensureCommerceAccounts, updateChequeStatus, invoiceOutstanding,
   type CommerceData, type AccountingParty, type InvoiceType, type InvoicePaymentPart, isSaleInvoiceType, isPurchaseInvoiceType,
 } from './accounting-commerce';
 import { toast } from './ui';
@@ -67,11 +67,8 @@ function nextInvoiceNumber(type:InvoiceType):string {
 function invoiceRows(type:InvoiceType):string {
   return (commerce?.invoices||[]).filter(i=>i.type===type).slice().reverse().map(i=>{
     const p=commerce?.parties.find(x=>x.id===i.partyId);
-    return `<tr><td>${esc(i.number)}</td><td>${esc(p?.name||'—')}</td><td>${esc(i.date)}</td><td>${money(i.grossRial)}</td><td>${i.status==='posted'?'قطعی':'پیش‌نویس'}</td><td><button class="btn btn-sm btn-secondary" data-print-invoice="${i.id}">چاپ</button> ${i.status==='draft'?`<button class="btn btn-sm btn-secondary" data-edit-invoice="${i.id}">ویرایش</button>${i.type==='proforma'?'پیش‌فاکتور؛ بدون سند حسابداری':`<button class="btn btn-sm btn-primary" data-post-invoice="${i.id}">تسویه / ثبت قطعی</button>`}`:'قطعی؛ ویرایش مستقیم غیرفعال'}</td></tr>`;
+    return `<tr><td>${esc(i.number)}</td><td>${esc(p?.name||'—')}</td><td>${esc(i.date)}</td><td>${money(i.grossRial)}</td><td>${i.status==='posted'?'قطعی':'پیش‌نویس'}</td><td><button class="btn btn-sm btn-secondary" data-print-invoice="${i.id}">چاپ</button> ${i.status==='draft'?`<button class="btn btn-sm btn-secondary" data-edit-invoice="${i.id}">ویرایش</button>${i.type==='proforma'?'پیش‌فاکتور؛ بدون سند':`<button class="btn btn-sm btn-primary" data-post-invoice="${i.id}">تسویه</button>`}`:'قطعی؛ ویرایش مستقیم غیرفعال'}</td></tr>`;
   }).join('')||'<tr><td colspan="6">برای این بخش هنوز فاکتوری ثبت نشده است.</td></tr>';
-}
-function partiesRows():string {
-  return (commerce?.parties||[]).map(p=>`<tr><td>${esc(p.name)}</td><td>${p.type==='customer'?'مشتری':p.type==='supplier'?'تأمین‌کننده':'هر دو'}</td><td>${esc(p.phone||'—')}</td><td>${money(partyBalance(p.id,commerce!))}</td><td>${p.isActive?'فعال':'غیرفعال'}</td></tr>`).join('')||'<tr><td colspan="5">هنوز شخصی ثبت نشده است.</td></tr>';
 }
 function cashRows():string {
   return (commerce?.cashTransactions||[]).slice().reverse().map(t=>{const p=commerce?.parties.find(x=>x.id===t.partyId);const method=t.method==='cheque'?'چک':t.method==='bank'?'بانک':t.method==='card'?'کارت‌خوان':t.method==='transfer'?'حواله':'نقد';const status=t.chequeStatus==='pending'?'در انتظار وصول':t.chequeStatus==='cleared'?'وصول/تسویه‌شده':t.chequeStatus==='bounced'?'برگشتی':t.chequeStatus==='void'?'باطل':'قطعی';const endorsed=!!getChequeEndorsement(t.id,commerce!);const actions=t.chequeStatus==='pending'?`${endorsed?'چک ظهرنویسی شده؛ ':''}${!endorsed?`<button class="btn btn-sm btn-secondary" data-cheque-clear="${t.id}">وصول/تسویه</button> `:''}<button class="btn btn-sm btn-secondary" data-cheque-bounce="${t.id}">برگشتی</button>`:'—';return `<tr><td>${esc(t.number)}</td><td>${t.type==='receipt'?'دریافت':'پرداخت'} (${method})</td><td>${esc(p?.name||'—')}</td><td>${esc(t.date)}</td><td>${money(t.amountRial)}</td><td>${status}${t.chequeNumber?`<br>چک ${esc(t.chequeNumber)} · ${esc(t.chequeDueDate||'')}`:''}</td><td>${actions}</td></tr>`}).join('')||'<tr><td colspan="7">هنوز دریافت یا پرداختی ثبت نشده است.</td></tr>';
@@ -88,12 +85,46 @@ function productOptions():string{return products.map(p=>`<option value="${esc(p.
 function addInvoiceLine(productId?:string):void {
   const host=el<HTMLDivElement>('#commerceInvoiceLines'); if(!host)return;
   const row=document.createElement('div'); row.className='form-grid commerce-line invoice-line-card'; row.setAttribute('dir','rtl');
-  row.innerHTML=`<div class="invoice-line-heading"><span class="invoice-line-number"></span><span>جزئیات قلم فاکتور</span></div><label class="field">انتخاب کالای انبار (اختیاری)<select data-line-product><option value="">خدمت یا قلم آزاد (بدون کالا)</option>${productOptions()}</select><small class="invoice-field-help">فقط برای اقلامی که در فهرست کالاهای انبار ثبت شده‌اند انتخاب کنید.</small></label><label class="field">شرح ردیف فاکتور<input data-line-desc placeholder="مثلاً اجرت نصب، مشاوره یا نام کالا"></label><label class="field">واحد اندازه‌گیری<input data-line-unit value="عدد" placeholder="عدد، کیلو، بسته..."></label><label class="field invoice-stock-field">موجودی فعلی<output data-line-stock class="invoice-line-stock">—</output></label><label class="field">تعداد<input data-line-qty data-recalc inputmode="decimal" value="1"></label><label class="field">قیمت واحد (${currency==='toman'?'تومان':'ریال'})<input data-line-price data-recalc inputmode="numeric" placeholder="۰"></label><label class="field">تخفیف (${currency==='toman'?'تومان':'ریال'})<input data-line-discount data-recalc inputmode="numeric" value="0"></label><label class="field invoice-line-total-field">مبلغ این ردیف<input data-line-total readonly value="۰"></label><button type="button" class="btn btn-sm btn-secondary invoice-line-remove" data-remove-line>حذف ردیف</button>`;
-  row.querySelector<HTMLSelectElement>('[data-line-product]')!.value=productId||'';
-  const applyProduct=(productId:string)=>{const product=products.find(p=>p.id===productId);if(!product)return;row.querySelector<HTMLInputElement>('[data-line-desc]')!.value=product.name;row.querySelector<HTMLInputElement>('[data-line-unit]')!.value=product.unit||'عدد';const stock=row.querySelector<HTMLOutputElement>('[data-line-stock]');if(stock)stock.textContent=`${fa(Number(product.systemQty)||0)} ${product.unit||'عدد'}`;const price=row.querySelector<HTMLInputElement>('[data-line-price]')!;if(product.price&&(!price.value.trim()||price.dataset.autoFilled==='true')){price.value=formatMoneyFromRial(Number(product.price)||0,currency);price.dataset.autoFilled='true';}updateInvoiceTotals();};
-  if(productId)applyProduct(productId);
+  row.innerHTML=`<div class="invoice-line-heading"><span class="invoice-line-number"></span><span>قلم</span></div><input type="hidden" data-line-product value=""><div class="field invoice-line-product-name" data-line-product-label hidden><span class="invoice-product-badge">کالای انبار</span> <strong data-line-product-title></strong></div><label class="field">شرح ردیف فاکتور<input data-line-desc placeholder="مثلاً اجرت نصب، مشاوره یا نام کالا"></label><label class="field">واحد اندازه‌گیری<input data-line-unit value="عدد" placeholder="عدد، کیلو، بسته..."></label><label class="field invoice-stock-field">موجودی فعلی<output data-line-stock class="invoice-line-stock">—</output></label><label class="field">تعداد<input data-line-qty data-recalc inputmode="decimal" value="1"></label><label class="field">قیمت واحد (${currency==='toman'?'تومان':'ریال'})<input data-line-price data-recalc inputmode="numeric" placeholder="۰"></label><label class="field">تخفیف (${currency==='toman'?'تومان':'ریال'})<input data-line-discount data-recalc inputmode="numeric" value="0"></label><label class="field invoice-line-total-field">مبلغ این ردیف<input data-line-total readonly value="۰"></label><button type="button" class="btn btn-sm btn-secondary invoice-line-remove" data-remove-line>حذف ردیف</button>`;
+  const productInput=row.querySelector<HTMLInputElement>('[data-line-product]')!;
+  productInput.value=productId||'';
+  const descField=row.querySelector<HTMLInputElement>('[data-line-desc]')!;
+  const descLabel=descField.closest('label') as HTMLElement|null;
+  const unitField=row.querySelector<HTMLInputElement>('[data-line-unit]')!;
+  const stockOut=row.querySelector<HTMLOutputElement>('[data-line-stock]');
+  const stockField=row.querySelector<HTMLElement>('.invoice-stock-field');
+  const productLabel=row.querySelector<HTMLElement>('[data-line-product-label]');
+  const productTitle=row.querySelector<HTMLElement>('[data-line-product-title]');
+  const applyProduct=(id:string)=>{
+    productInput.value=id||'';
+    const product=products.find(p=>p.id===id);
+    if(product){
+      descField.value=product.name;
+      if(descLabel)descLabel.hidden=true;
+      if(productLabel)productLabel.hidden=false;
+      if(productTitle)productTitle.textContent=product.name;
+      unitField.value=product.unit||'عدد';
+      if(stockOut)stockOut.textContent=`${fa(Number(product.systemQty)||0)} ${product.unit||'عدد'}`;
+      if(stockField)stockField.hidden=false;
+      const price=row.querySelector<HTMLInputElement>('[data-line-price]')!;
+      if(product.price&&(!price.value.trim()||price.dataset.autoFilled==='true')){
+        price.value=formatMoneyFromRial(Number(product.price)||0,currency);
+        price.dataset.autoFilled='true';
+      }
+    }else{
+      if(descLabel)descLabel.hidden=false;
+      if(productLabel)productLabel.hidden=true;
+      if(productTitle)productTitle.textContent='';
+      descField.readOnly=false;
+      descField.placeholder='مثلاً اجرت نصب، مشاوره یا نام کالا';
+      if(!descField.value.trim())descField.value='';
+      if(stockOut)stockOut.textContent='—';
+      if(stockField)stockField.hidden=true;
+    }
+    updateInvoiceTotals();
+  };
+  if(productId)applyProduct(productId); else { if(stockField)stockField.hidden=true; if(descLabel)descLabel.hidden=false; if(productLabel)productLabel.hidden=true; }
   row.querySelector('[data-remove-line]')?.addEventListener('click',()=>{if(host.children.length>1)row.remove();else toast('فاکتور باید حداقل یک ردیف داشته باشد.','error');updateInvoiceTotals()});
-  row.querySelector<HTMLSelectElement>('[data-line-product]')?.addEventListener('change',event=>{applyProduct((event.target as HTMLSelectElement).value);updateInvoiceTotals();});
   row.querySelector<HTMLInputElement>('[data-line-price]')?.addEventListener('input',event=>{(event.target as HTMLInputElement).dataset.autoFilled='false'});
   host.appendChild(row);
   row.querySelectorAll<HTMLInputElement>('[data-recalc]').forEach(input=>input.addEventListener('input',()=>updateInvoiceTotals()));
@@ -102,13 +133,12 @@ function addInvoiceLine(productId?:string):void {
 function addProductToInvoice(productId:string, keepScanReady=false):void {
   if(!products.some(p=>p.id===productId)){toast('کالای انتخاب‌شده پیدا نشد.','error');return;}
   const linesHost=el<HTMLDivElement>('#commerceInvoiceLines');
-  if(linesHost?.children.length===1){const first=linesHost.firstElementChild as HTMLElement;const hasData=!!(first.querySelector<HTMLInputElement>('[data-line-desc]')?.value.trim()||first.querySelector<HTMLInputElement>('[data-line-price]')?.value.trim()||first.querySelector<HTMLSelectElement>('[data-line-product]')?.value);if(!hasData)first.remove();}
+  if(linesHost?.children.length===1){const first=linesHost.firstElementChild as HTMLElement;const hasData=!!(first.querySelector<HTMLInputElement>('[data-line-desc]')?.value.trim()||first.querySelector<HTMLInputElement>('[data-line-price]')?.value.trim()||first.querySelector<HTMLInputElement>('[data-line-product]')?.value);if(!hasData)first.remove();}
   addInvoiceLine(productId);
-  const host=el<HTMLInputElement>('#invoiceProductSearch');if(host)host.value='';
+  const host=el<HTMLInputElement>('#invoiceProductSearch');if(host){host.value='';}
   const barcode=el<HTMLInputElement>('#invoiceBarcodeInput');if(barcode)barcode.value='';
   if(keepScanReady){
-    const input=el<HTMLInputElement>('#invoiceBarcodeInput');
-    if(input){input.value='';input.focus({preventScroll:true});}
+    host?.focus({preventScroll:true});
   }else{
     el<HTMLElement>('#commerceInvoiceLines')?.lastElementChild?.scrollIntoView({behavior:'smooth',block:'nearest'});
   }
@@ -128,7 +158,7 @@ function readInvoicePaymentPartsSafe():InvoicePaymentPart[]{try{return readInvoi
 function settlementRow(part?:InvoicePaymentPart):string {
  const method=part?.method||'cash';
  return `<div class="settlement-payment-row form-grid" style="border:1px solid var(--border-color,#ddd);border-radius:8px;padding:12px;margin:8px 0;align-items:end">
- <label class="field">روش دریافت / پرداخت<select data-settle-method><option value="cash" ${method==='cash'?'selected':''}>نقدی</option><option value="card" ${method==='card'?'selected':''}>کارت</option><option value="cheque" ${method==='cheque'?'selected':''}>چک</option><option value="credit" ${method==='credit'?'selected':''}>اعتباری / مانده حساب</option></select></label>
+ <label class="field">روش<select data-settle-method><option value="cash" ${method==='cash'?'selected':''}>نقدی</option><option value="card" ${method==='card'?'selected':''}>کارت‌خوان</option><option value="cheque" ${method==='cheque'?'selected':''}>چک</option><option value="credit" ${method==='credit'?'selected':''}>اعتباری (مانده حساب)</option></select></label>
  <label class="field">مبلغ (${currency==='toman'?'تومان':'ریال'})<input data-settle-amount inputmode="numeric" value="${part?esc(formatMoneyFromRial(part.amountRial,currency)):''}" placeholder="مبلغ"></label>
  <label class="field" data-settle-cheque ${method==='cheque'?'':'hidden'}>شماره چک<input data-settle-cheque-number value="${esc(part?.chequeNumber||'')}"></label>
  <label class="field" data-settle-cheque ${method==='cheque'?'':'hidden'}>بانک<input data-settle-cheque-bank value="${esc(part?.chequeBank||'')}"></label>
@@ -143,10 +173,12 @@ function openInvoiceSettlementSheet(invoiceId:string):void {
  const party=commerce.parties.find(p=>p.id===target.partyId);
  const overlay=document.createElement('div');overlay.id='invoiceSettlementSheet';overlay.dir='rtl';
  overlay.style.cssText='position:fixed;inset:0;z-index:10050;background:var(--surface,#fff);color:var(--text,#222);overflow:auto;padding:clamp(12px,3vw,28px)';
- overlay.innerHTML=`<div style="max-width:1000px;margin:0 auto"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><h2 style="margin:0 0 6px">برگه مستقل دریافت / پرداخت</h2><p class="hint" style="margin:0">فاکتور ${esc(target.number)} · ${esc(party?.name||'—')} · مبلغ ${money(target.grossRial)}</p></div><button type="button" class="btn btn-secondary" id="settlementBack">بازگشت به فاکتور</button></div>
- <div class="card" style="margin-top:16px"><h3>ثبت مراحل دریافت / پرداخت</h3><p class="hint">هر مرحله را جداگانه ثبت کنید. چک‌ها با مشخصات کامل در سوابق مالی فاکتور ذخیره می‌شوند. مبلغ اعتباری وجه دریافت‌شده نیست و به‌صورت مانده بدهی باقی می‌ماند.</p><div id="settlementRows">${((target.paymentParts||[]).filter(x=>x.method!=='credit').length?(target.paymentParts||[]).filter(x=>x.method!=='credit'):[{method:'cash' as const,amountRial:Math.max(0,target.grossRial)}]).map(x=>settlementRow(x)).join('')}</div><button type="button" class="btn btn-secondary" id="settlementAdd">افزودن مرحله دریافت / پرداخت</button>
- <div class="form-grid" style="margin-top:12px"><label class="field">تاریخ سررسید مانده اعتباری (شمسی)<input id="settlementDueDate" value="${esc(target.dueDate||'')}" placeholder="۱۴۰۵/۰۱/۳۰"></label></div><div class="card" style="margin-top:12px"><div id="settlementTotals">در حال محاسبه...</div><div id="settlementCredit" class="hint" style="margin-top:8px"></div></div>
- <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px"><button type="button" class="btn btn-primary" id="settlementConfirm">ثبت دریافت / پرداخت و قطعی‌سازی فاکتور</button><button type="button" class="btn btn-secondary" id="settlementCancel">لغو و بازگشت</button></div></div></div>`;
+ const isSale=isSaleInvoiceType(target.type);
+ const actionLabel=isSale?'دریافت':'پرداخت';
+ overlay.innerHTML=`<div style="max-width:1000px;margin:0 auto"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><h2 style="margin:0 0 6px">تسویه فاکتور — ${actionLabel}</h2><p class="hint" style="margin:0">شماره ${esc(target.number)} · ${esc(party?.name||'—')} · مبلغ نهایی ${money(target.grossRial)}</p></div><button type="button" class="btn btn-secondary" id="settlementBack">بازگشت</button></div>
+ <div class="card" style="margin-top:16px"><h3>نوع ${actionLabel}</h3><p class="hint">روش و مبلغ را مشخص کنید. می‌توانید چند روش را ترکیب کنید (مثلاً بخشی نقد و بخشی چک). مانده به‌صورت اعتباری ثبت می‌شود.</p><div id="settlementRows">${((target.paymentParts||[]).filter(x=>x.method!=='credit').length?(target.paymentParts||[]).filter(x=>x.method!=='credit'):[{method:'cash' as const,amountRial:Math.max(0,target.grossRial)}]).map(x=>settlementRow(x)).join('')}</div><button type="button" class="btn btn-secondary" id="settlementAdd">افزودن روش ${actionLabel}</button>
+ <div class="form-grid" style="margin-top:12px"><label class="field">سررسید مانده اعتباری (شمسی)<input id="settlementDueDate" value="${esc(target.dueDate||'')}" placeholder="۱۴۰۵/۰۱/۳۰"></label></div><div class="card" style="margin-top:12px"><div id="settlementTotals">در حال محاسبه...</div><div id="settlementCredit" class="hint" style="margin-top:8px"></div></div>
+ <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px"><button type="button" class="btn btn-primary" id="settlementConfirm">تأیید ${actionLabel} و ثبت قطعی</button><button type="button" class="btn btn-secondary" id="settlementCancel">انصراف</button></div></div></div>`;
  document.body.appendChild(overlay);
  const host=overlay.querySelector<HTMLDivElement>('#settlementRows')!;
  const read=():InvoicePaymentPart[]=>[...host.querySelectorAll<HTMLElement>('.settlement-payment-row')].map(row=>{const method=row.querySelector<HTMLSelectElement>('[data-settle-method]')!.value as InvoicePaymentPart['method'];return {method,amountRial:parseMoneyToRial(digits(row.querySelector<HTMLInputElement>('[data-settle-amount]')!.value||'0'),currency),...(method==='cheque'?{chequeNumber:row.querySelector<HTMLInputElement>('[data-settle-cheque-number]')!.value,chequeBank:row.querySelector<HTMLInputElement>('[data-settle-cheque-bank]')!.value,chequeAccount:row.querySelector<HTMLInputElement>('[data-settle-cheque-account]')!.value,chequeDueDate:digits(row.querySelector<HTMLInputElement>('[data-settle-cheque-due]')!.value),note:row.querySelector<HTMLInputElement>('[data-settle-cheque-note]')!.value}:{})};}).filter(x=>x.amountRial>0);
@@ -352,31 +384,81 @@ function openInvoiceItemsSheet():void {
  const placeholder=el<HTMLElement>('#invoiceItemsPlaceholder');if(!placeholder)return;
  document.getElementById('invoiceItemsSheet')?.remove();
  const overlay=document.createElement('div');overlay.id='invoiceItemsSheet';overlay.dir='rtl';overlay.style.cssText='position:fixed;inset:0;z-index:10045;background:var(--surface,#fff);color:var(--text,#222);overflow:auto;padding:clamp(12px,3vw,28px)';
- overlay.innerHTML=`<div style="max-width:1100px;margin:0 auto"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2>انتخاب و افزودن اقلام فاکتور</h2><button class="btn btn-primary" id="invoiceItemsBack">تأیید اقلام و بازگشت به فاکتور</button></div><p class="hint">برای کالای انباری، نام یا بارکد را جست‌وجو کنید. خدمات و اقلام آزاد را با «افزودن ردیف خالی» ثبت کنید. تغییرات تا زمان ذخیره فاکتور در پیش‌نویس باقی می‌مانند.</p><div id="invoiceItemsMount"></div></div>`;
+ overlay.innerHTML=`<div style="max-width:1100px;margin:0 auto"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2>اقلام</h2><button class="btn btn-primary" id="invoiceItemsBack">تأیید</button></div><div id="invoiceItemsMount" style="margin-top:14px"></div></div>`;
  document.body.appendChild(overlay);
  const mount=overlay.querySelector<HTMLElement>('#invoiceItemsMount')!;
  ['.commerce-lines-head','.invoice-product-tools','#commerceInvoiceLines','#invoiceAddLine'].forEach(sel=>{const node=el<HTMLElement>(sel);if(node)mount.appendChild(node)});
- overlay.querySelector('#invoiceItemsBack')!.addEventListener('click',()=>{['.commerce-lines-head','.invoice-product-tools','#commerceInvoiceLines','#invoiceAddLine'].forEach(sel=>{const node=mount.querySelector<HTMLElement>(sel);if(node)placeholder.appendChild(node)});overlay.remove();updateInvoiceTotals();const count=document.querySelectorAll('#commerceInvoiceLines .commerce-line').length;const summary=el<HTMLElement>('#invoiceItemsSummary');if(summary)summary.textContent=count?`${fa(count)} قلم به فاکتور اضافه شده است.`:'هنوز هیچ قلمی به فاکتور اضافه نشده است.';});
+ overlay.querySelector('#invoiceItemsBack')!.addEventListener('click',()=>{['.commerce-lines-head','.invoice-product-tools','#commerceInvoiceLines','#invoiceAddLine'].forEach(sel=>{const node=mount.querySelector<HTMLElement>(sel);if(node)placeholder.appendChild(node)});overlay.remove();updateInvoiceTotals();const count=document.querySelectorAll('#commerceInvoiceLines .commerce-line').length;const summary=el<HTMLElement>('#invoiceItemsSummary');if(summary)summary.textContent=count?`${fa(count)} قلم`:'';});
 }
 
 async function render():Promise<void> {
   const root=el<HTMLDivElement>('#accountingCommerceWorkspace'); if(!root||!commerce)return;
+  root.setAttribute('dir','rtl');
   root.innerHTML=`
   <div class="commerce-section-nav" role="tablist" aria-label="بخش‌های عملیات بازرگانی">
     <button type="button" class="btn btn-primary" id="openInvoiceTypeSheet">فاکتور جدید</button>
     <button type="button" class="btn ${activeCommerceSection==='sale'?'btn-primary':'btn-secondary'}" data-commerce-tab="sale" role="tab" aria-selected="${activeCommerceSection==='sale'}">فاکتور فروش</button>
     <button type="button" class="btn ${activeCommerceSection==='purchase'?'btn-primary':'btn-secondary'}" data-commerce-tab="purchase" role="tab" aria-selected="${activeCommerceSection==='purchase'}">فاکتور خرید</button>
-    <button type="button" class="btn ${activeCommerceSection==='receipts'?'btn-primary':'btn-secondary'}" data-commerce-tab="receipts" role="tab" aria-selected="${activeCommerceSection==='receipts'}">دریافت و پرداخت</button>
-    <button type="button" class="btn ${activeCommerceSection==='cheques'?'btn-primary':'btn-secondary'}" data-commerce-tab="cheques" role="tab" aria-selected="${activeCommerceSection==='cheques'}">مدیریت چک‌ها</button>
-    <button type="button" class="btn ${activeCommerceSection==='aging'?'btn-primary':'btn-secondary'}" data-commerce-tab="aging" role="tab" aria-selected="${activeCommerceSection==='aging'}">مطالبات و بدهی‌ها</button>
-    <button type="button" class="btn ${activeCommerceSection==='banking'?'btn-primary':'btn-secondary'}" data-commerce-tab="banking" role="tab" aria-selected="${activeCommerceSection==='banking'}">بانک و صندوق</button>
-    <button type="button" class="btn ${activeCommerceSection==='management'?'btn-primary':'btn-secondary'}" data-commerce-tab="management" role="tab" aria-selected="${activeCommerceSection==='management'}">داشبورد مدیریتی و گزارش سود</button>
-    <button type="button" class="btn ${activeCommerceSection==='inventory'?'btn-primary':'btn-secondary'}" data-commerce-tab="inventory" role="tab" aria-selected="${activeCommerceSection==='inventory'}">انبار، تطبیق و ارزش‌گذاری موجودی</button>
+    <button type="button" class="btn ${activeCommerceSection==='receipts'?'btn-primary':'btn-secondary'}" data-commerce-tab="receipts" role="tab" aria-selected="${activeCommerceSection==='receipts'}">دریافت / پرداخت</button>
+    <button type="button" class="btn ${activeCommerceSection==='cheques'?'btn-primary':'btn-secondary'}" data-commerce-tab="cheques" role="tab" aria-selected="${activeCommerceSection==='cheques'}">چک‌ها</button>
+    <button type="button" class="btn ${activeCommerceSection==='aging'?'btn-primary':'btn-secondary'}" data-commerce-tab="aging" role="tab" aria-selected="${activeCommerceSection==='aging'}">مانده اشخاص</button>
+    <button type="button" class="btn ${activeCommerceSection==='banking'?'btn-primary':'btn-secondary'}" data-commerce-tab="banking" role="tab" aria-selected="${activeCommerceSection==='banking'}">بانک</button>
+    <button type="button" class="btn ${activeCommerceSection==='management'?'btn-primary':'btn-secondary'}" data-commerce-tab="management" role="tab" aria-selected="${activeCommerceSection==='management'}">سودآوری</button>
+    <button type="button" class="btn ${activeCommerceSection==='inventory'?'btn-primary':'btn-secondary'}" data-commerce-tab="inventory" role="tab" aria-selected="${activeCommerceSection==='inventory'}">انبار</button>
   </div>
   <section data-commerce-section="invoices" ${activeCommerceSection==='sale'||activeCommerceSection==='purchase'?'':'hidden'}>
-  <header class="commerce-page-header"><div><h2>${invoiceTypeTitle(activeInvoiceType)}</h2><p>${activeCommerceSection==='sale'?'ثبت و مدیریت فروش کالا و خدمات':'ثبت و مدیریت خرید کالا و خدمات'}</p></div><span class="commerce-page-chip">${activeCommerceSection==='sale'?'فروش':'خرید'}</span></header>
-  <details class="card commerce-parties-panel" style="margin-top:14px"><summary>مدیریت اشخاص؛ مشتری و تأمین‌کننده</summary><div class="form-grid"><label class="field">نام / عنوان<input id="partyName" placeholder="نام شخص یا شرکت"></label><label class="field">نوع<select id="partyType"><option value="customer">مشتری</option><option value="supplier">تأمین‌کننده</option><option value="both">هر دو</option></select></label><label class="field">شناسه ملی<input id="partyNationalId" inputmode="numeric"></label><label class="field">کد اقتصادی<input id="partyEconomicCode" inputmode="numeric"></label><label class="field">شماره ثبت<input id="partyRegistration"></label><label class="field">تلفن<input id="partyPhone"></label><label class="field">کد پستی<input id="partyPostalCode"></label><label class="field">نشانی<input id="partyAddress"></label></div><button class="btn btn-primary" id="partySave">ثبت شخص</button><div class="table-wrap"><table class="data-table"><thead><tr><th>نام</th><th>نوع</th><th>تلفن</th><th>مانده محاسباتی</th><th>وضعیت</th></tr></thead><tbody>${partiesRows()}</tbody></table></div></details>
-  <div class="card commerce-invoice-card" style="margin-top:12px"><h3 id="invoiceFormTitle">${'ثبت '+invoiceTypeTitle(activeInvoiceType)}</h3><div class="form-grid"><input type="hidden" id="invoiceType" value="${activeInvoiceType}"><label class="field">شماره فاکتور (خودکار؛ قابل تغییر)<input id="invoiceNumber" value="${esc(nextInvoiceNumber(activeInvoiceType))}" placeholder="شماره یکتا" autocomplete="off"></label><label class="field">${isSaleInvoiceType(activeInvoiceType)?'خریدار':'فروشنده'}<select id="invoiceParty"><option value="">انتخاب ${isSaleInvoiceType(activeInvoiceType)?'خریدار':'فروشنده'}</option>${partyOptions(isSaleInvoiceType(activeInvoiceType)?'customer':'supplier')}</select></label><label class="field">تاریخ صدور (شمسی)<div class="invoice-jalali-date"><input id="invoiceDate" value="${todayJalali()}" placeholder="۱۴۰۵/۰۱/۰۱" autocomplete="off" inputmode="numeric"><button type="button" class="btn btn-secondary" id="invoiceJalaliCalendar" aria-label="بازکردن تقویم شمسی" title="انتخاب از تقویم شمسی">▦</button></div><div id="invoiceJalaliCalendarPanel" class="invoice-jalali-calendar" hidden></div></label><input type="hidden" id="invoicePaymentTerms" value="با توجه به مراحل پرداخت تعیین می‌شود"><select hidden aria-hidden="true"><option value="نقدی">نقدی</option><option value="چکی">چکی</option><option value="اعتباری">اعتباری</option><option value="ترکیبی">ترکیبی</option><option value="کارت‌خوان">کارت‌خوان</option></select><input type="hidden" id="invoiceDescription"></div><div class="card" style="margin:12px 0"><b>اقلام فاکتور</b><p class="hint">برای انتخاب کالاها، برگه مستقل اقلام فاکتور را باز کنید.</p><button type="button" class="btn btn-secondary" id="invoiceOpenItems">انتخاب و افزودن اقلام فاکتور</button><div id="invoiceItemsSummary" class="hint" style="margin-top:8px">هنوز هیچ قلمی به فاکتور اضافه نشده است.</div><div id="invoiceItemsPlaceholder" hidden></div></div><div class="commerce-lines-head"><b>اقلام فاکتور</b><span class="hint">کالا را با نام یا بارکد جست‌وجو کنید؛ هر انتخاب به ردیف بعدی اضافه می‌شود.</span></div><div class="invoice-product-tools"><div class="invoice-live-search"><label class="field">جست‌وجوی لحظه‌ای نام کالا<input id="invoiceProductSearch" autocomplete="off" placeholder="حتی یک حرف از نام کالا..."></label><div id="invoiceProductSuggestions" class="invoice-product-suggestions" role="listbox" hidden></div></div><button class="btn btn-secondary" id="invoiceProductAdd" type="button">افزودن کالای انتخابی</button><div class="invoice-barcode-entry"><label class="field">ورود بارکد یا اسکن با دوربین<input id="invoiceBarcodeInput" inputmode="numeric" autocomplete="off" placeholder="بارکد را وارد یا اسکن کنید"></label><button class="btn btn-secondary" id="invoiceBarcodeAdd" type="button">افزودن</button><button class="btn btn-primary" id="invoiceScanOpen" type="button">اسکن بارکد با دوربین</button></div><small id="invoiceScanStatus" class="hint" role="status" aria-live="polite">پس از هر اسکن، آماده دریافت بارکد بعدی می‌ماند.</small></div><div id="commerceInvoiceLines"></div><button class="btn btn-sm btn-secondary" id="invoiceAddLine" type="button">افزودن ردیف خالی / خدمت</button><details class="card" style="margin-top:12px"><summary>جزئیات، شرح و شرایط پرداخت</summary><div class="form-grid" style="margin-top:12px"><label class="field">موضوع / شرح<input id="invoiceDescriptionVisible" placeholder="شرح کلی فاکتور"></label><label class="field">نرخ مالیات و عوارض (%)<input id="invoiceTaxRate" inputmode="decimal" value="0" placeholder="نرخ مصوب"></label><label class="field">مبلغ مالیات و عوارض (${currency==='toman'?'تومان':'ریال'})<input id="invoiceTax" inputmode="numeric" value="0"></label><label class="field">توضیحات و شرایط تکمیلی<textarea id="invoiceNotes" rows="2" placeholder="توضیحات درج‌شده در نسخه چاپی"></textarea></label></div><div class="card" style="margin-top:12px"><h4>تسویه فاکتور</h4><p class="hint">ثبت دریافت یا پرداخت فقط از طریق برگه مستقل «تسویه» انجام می‌شود. مبلغ پرداخت‌شده و مانده پس از ثبت در همان برگه محاسبه و نمایش داده می‌شود.</p><input type="hidden" id="invoiceDueDate" value=""><div id="invoicePaymentRows" hidden></div><div id="invoicePaymentSummary" class="hint" hidden></div></div></details><div class="commerce-invoice-summary"><div><span>جمع اقلام پس از تخفیف</span><b id="invoiceNetPreview">—</b></div><div><span>مالیات و عوارض</span><b id="invoiceTaxPreview">—</b></div><div class="grand"><span>مبلغ نهایی فاکتور</span><b id="invoiceGrossPreview">—</b></div></div><p class="hint">ثبت پیش‌نویس به‌تنهایی موجودی یا حساب‌ها را تغییر نمی‌دهد. با «ثبت قطعی و سند»، سند حسابداری و گردش انبار اعمال می‌شود. پرداخت‌های نقدی، کارتی و چکی هنگام قطعی‌سازی به سوابق دریافت/پرداخت و فاکتور متصل می‌شوند؛ بخش اعتباری به‌صورت مانده حساب باقی می‌ماند.</p><button class="btn btn-primary" id="invoiceSave">ذخیره پیش‌نویس فاکتور</button> <button class="btn btn-secondary" id="invoiceSettle" type="button" ${activeInvoiceType==='proforma'?'hidden':''}>تسویه</button> <button class="btn btn-secondary" id="invoiceCancelEdit" type="button" hidden>لغو ویرایش</button><div class="table-wrap"><table class="data-table"><thead><tr><th>شماره فاکتور</th><th>${activeCommerceSection==='sale'?'مشتری':'تأمین‌کننده'}</th><th>تاریخ</th><th>مبلغ نهایی</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody>${invoiceRows(activeInvoiceType)}</tbody></table></div></div>
+  <header class="commerce-page-header"><div><h2>${invoiceTypeTitle(activeInvoiceType)}</h2></div><span class="commerce-page-chip">${activeCommerceSection==='sale'?'فروش':'خرید'}</span></header>
+  <div class="card commerce-invoice-card" style="margin-top:12px">
+<h3 id="invoiceFormTitle">${invoiceTypeTitle(activeInvoiceType)}</h3>
+<div class="form-grid invoice-header-grid">
+<input type="hidden" id="invoiceType" value="${activeInvoiceType}">
+<label class="field">شماره<input id="invoiceNumber" value="${esc(nextInvoiceNumber(activeInvoiceType))}" placeholder="شماره" autocomplete="off"></label>
+<label class="field">${isSaleInvoiceType(activeInvoiceType)?'خریدار':'فروشنده'}<select id="invoiceParty"><option value="">انتخاب</option>${partyOptions(isSaleInvoiceType(activeInvoiceType)?'customer':'supplier')}</select></label>
+<label class="field">تاریخ<div class="invoice-jalali-date"><input id="invoiceDate" value="${todayJalali()}" placeholder="۱۴۰۵/۰۱/۰۱" autocomplete="off" inputmode="numeric"><button type="button" class="btn btn-secondary" id="invoiceJalaliCalendar" aria-label="تقویم" title="تقویم شمسی">▦</button></div><div id="invoiceJalaliCalendarPanel" class="invoice-jalali-calendar" hidden></div></label>
+<input type="hidden" id="invoicePaymentTerms" value=""><select hidden aria-hidden="true"></select><input type="hidden" id="invoiceDescription">
+</div>
+
+<div class="invoice-items-block">
+<div class="invoice-items-toolbar">
+<b>اقلام</b>
+<button type="button" class="btn btn-sm btn-secondary" id="invoiceOpenItems">برگه اقلام</button>
+</div>
+<div id="invoiceItemsSummary" class="hint" style="margin:4px 0 8px"></div>
+<div id="invoiceItemsPlaceholder" hidden>
+<div class="commerce-lines-head"><b>اقلام</b></div>
+<div class="invoice-product-tools invoice-product-tools-compact">
+<div class="invoice-live-search"><label class="field">کالا / بارکد<input id="invoiceProductSearch" autocomplete="off" placeholder="نام یا بارکد"></label><div id="invoiceProductSuggestions" class="invoice-product-suggestions" role="listbox" hidden></div></div>
+<button class="btn btn-secondary" id="invoiceProductAdd" type="button">افزودن</button>
+<button class="btn btn-primary" id="invoiceScanOpen" type="button">اسکن</button>
+<input type="hidden" id="invoiceBarcodeInput">
+<small id="invoiceScanStatus" class="hint" role="status" aria-live="polite"></small>
+</div>
+<div id="commerceInvoiceLines"></div>
+<button class="btn btn-sm btn-secondary" id="invoiceAddLine" type="button">ردیف خالی</button>
+</div>
+</div>
+
+<details class="card invoice-details-panel" style="margin-top:14px"><summary>مالیات</summary>
+<div class="form-grid invoice-details-grid" style="margin-top:12px">
+<label class="field">نرخ مالیات (%)<input id="invoiceTaxRate" inputmode="decimal" value="0" placeholder="۰"></label>
+<label class="field">مبلغ مالیات<input id="invoiceTax" inputmode="numeric" value="0"></label>
+<label class="field">توضیحات چاپی<textarea id="invoiceNotes" rows="2" placeholder="اختیاری"></textarea></label>
+</div>
+<input type="hidden" id="invoiceDescriptionVisible" value="">
+<input type="hidden" id="invoiceDueDate" value=""><div id="invoicePaymentRows" hidden></div><div id="invoicePaymentSummary" class="hint" hidden></div>
+</details>
+
+<div class="commerce-invoice-summary">
+<div><span>جمع</span><b id="invoiceNetPreview">—</b></div>
+<div><span>مالیات</span><b id="invoiceTaxPreview">—</b></div>
+<div class="grand"><span>مبلغ نهایی</span><b id="invoiceGrossPreview">—</b></div>
+</div>
+<div class="invoice-action-bar">
+<button class="btn btn-secondary" id="invoiceSave" type="button">پیش‌نویس</button>
+<button class="btn btn-primary" id="invoiceSettle" type="button" ${activeInvoiceType==='proforma'?'hidden':''}>تسویه</button>
+<button class="btn btn-secondary" id="invoiceCancelEdit" type="button" hidden>لغو</button>
+</div>
+<div class="table-wrap"><table class="data-table"><thead><tr><th>شماره فاکتور</th><th>${activeCommerceSection==='sale'?'مشتری':'تأمین‌کننده'}</th><th>تاریخ</th><th>مبلغ نهایی</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody>${invoiceRows(activeInvoiceType)}</tbody></table></div></div>
   </section>
   <section data-commerce-section="management" ${activeCommerceSection==='management'?'':'hidden'}>
     ${activeCommerceSection==='management'?await managementDashboardPanel():''}
@@ -414,9 +496,23 @@ function startInvoiceEdit(invoiceId:string):void {
   activeInvoiceType=invoice.type; activeCommerceSection=isSaleInvoiceType(invoice.type)?'sale':'purchase'; set('#invoiceType',invoice.type); el<HTMLSelectElement>('#invoiceParty')!.innerHTML='<option value="">انتخاب طرف حساب</option>'+partyOptions(isSaleInvoiceType(invoice.type)?'customer':'supplier');
   set('#invoiceNumber',invoice.number);set('#invoiceParty',invoice.partyId);set('#invoiceDate',invoice.date);set('#invoiceDueDate','');const paymentHost=el<HTMLDivElement>('#invoicePaymentRows');if(paymentHost)paymentHost.innerHTML='';set('#invoicePaymentTerms','تسویه از برگه مستقل انجام می‌شود');set('#invoiceDescription',invoice.description);set('#invoiceDescriptionVisible',invoice.description);set('#invoiceNotes',invoice.notes||'');set('#invoiceTaxRate',String((invoice.taxRateBps||0)/100));set('#invoiceTax',formatMoneyFromRial(invoice.taxRial,currency));
   const host=el<HTMLDivElement>('#commerceInvoiceLines')!;host.innerHTML='';
-  for(const line of invoice.lines){addInvoiceLine();const row=host.lastElementChild as HTMLElement;const put=(selector:string,value:string)=>{const node=row.querySelector<HTMLInputElement|HTMLSelectElement>(selector);if(node)node.value=value};put('[data-line-product]',line.productId||'');put('[data-line-desc]',line.description);put('[data-line-unit]',line.unit||'عدد');put('[data-line-qty]',String(line.quantityMilli/1000));put('[data-line-price]',formatMoneyFromRial(line.unitPriceRial,currency));put('[data-line-discount]',formatMoneyFromRial(line.discountRial||0,currency));const product=products.find(x=>x.id===line.productId);const stock=row.querySelector<HTMLOutputElement>('[data-line-stock]');if(stock&&product)stock.textContent=`${fa(Number(product.systemQty)||0)} ${product.unit||'عدد'}`;}
+  for(const line of invoice.lines){
+    addInvoiceLine(line.productId||undefined);
+    const row=host.lastElementChild as HTMLElement;
+    const put=(selector:string,value:string)=>{const node=row.querySelector<HTMLInputElement|HTMLSelectElement>(selector);if(node)node.value=value};
+    put('[data-line-desc]',line.description);
+    put('[data-line-unit]',line.unit||'عدد');
+    put('[data-line-qty]',String(line.quantityMilli/1000));
+    put('[data-line-price]',formatMoneyFromRial(line.unitPriceRial,currency));
+    put('[data-line-discount]',formatMoneyFromRial(line.discountRial||0,currency));
+    const descField=row.querySelector<HTMLInputElement>('[data-line-desc]');
+    const descLabel=descField?.closest('label') as HTMLElement|null;
+    if(descLabel)descLabel.hidden=!!line.productId;
+    const stockField=row.querySelector<HTMLElement>('.invoice-stock-field');
+    if(stockField)stockField.hidden=!line.productId;
+  }
   updateInvoiceTotals();
-  const save=el<HTMLButtonElement>('#invoiceSave');if(save)save.textContent='ذخیره تغییرات فاکتور';const cancel=el<HTMLButtonElement>('#invoiceCancelEdit');if(cancel)cancel.hidden=false;
+  const save=el<HTMLButtonElement>('#invoiceSave');if(save)save.textContent='ذخیره پیش‌نویس';const cancel=el<HTMLButtonElement>('#invoiceCancelEdit');if(cancel)cancel.hidden=false;
   el<HTMLElement>('#invoiceFormTitle')?.scrollIntoView({behavior:'smooth',block:'start'});
 }
 function cancelInvoiceEdit():void {editingInvoiceId=null;render()}
@@ -440,34 +536,153 @@ function bind():void {
   el<HTMLButtonElement>('#bankStatementImport')?.addEventListener('click',async()=>{try{const file=el<HTMLInputElement>('#bankStatementFile')?.files?.[0];if(!file)throw new Error('ابتدا فایل CSV را انتخاب کنید.');const accountId=el<HTMLSelectElement>('#bankStatementAccount')!.value;const rows=parseBankStatementCsv(await file.text(),accountId);const result=await importBankStatement(rows);await render();toast(`${result.imported} ردیف وارد شد؛ ${result.matched} ردیف به‌صورت خودکار تطبیق یافت.`,'success')}catch(e){toast(e instanceof Error?e.message:'خطا در ورود صورت‌حساب','error')}});
 
   el<HTMLButtonElement>('#openingCostSave')?.addEventListener('click',async()=>{try{const p=products.find(x=>x.id===el<HTMLSelectElement>('#openingCostProduct')!.value);if(!p)throw new Error('کالا را انتخاب کنید.');const qty=Number(digits(el<HTMLInputElement>('#openingCostQty')!.value).replace(',','.'));if(!Number.isFinite(qty)||qty<=0)throw new Error('تعداد موجودی معتبر نیست.');if(Math.abs(qty-(Number(p.systemQty)||0))>0.000001)throw new Error('تعداد باید با موجودی فعلی کالا در انبار برابر باشد.');const warehouse=p.warehouse||'انبار اصلی';const costing=await loadInventoryCostData();setOpeningStockCost(costing,{productId:p.id,warehouse,qtyMilli:Math.round(qty*1000),unitCostRial:parseMoneyToRial(digits(el<HTMLInputElement>('#openingCostUnit')!.value),currency),date:digits(el<HTMLInputElement>('#openingCostDate')!.value)});await saveInventoryCostData(costing);logAudit('accounting_opening_stock_valued',{productId:p.id,warehouse,qty,unitCostRial:parseMoneyToRial(digits(el<HTMLInputElement>('#openingCostUnit')!.value),currency)});toast('بهای موجودی اولیه ثبت شد','success')}catch(e){toast(e instanceof Error?e.message:'خطا در ارزش‌گذاری موجودی','error')}});
-  el<HTMLButtonElement>('#partySave')?.addEventListener('click',async()=>{if(!commerce)return;try{const next=upsertParty(commerce,{type:el<HTMLSelectElement>('#partyType')!.value as AccountingParty['type'],name:el<HTMLInputElement>('#partyName')!.value,nationalId:digits(el<HTMLInputElement>('#partyNationalId')!.value),economicCode:digits(el<HTMLInputElement>('#partyEconomicCode')!.value),registrationNumber:el<HTMLInputElement>('#partyRegistration')!.value,phone:el<HTMLInputElement>('#partyPhone')!.value,postalCode:digits(el<HTMLInputElement>('#partyPostalCode')!.value),address:el<HTMLInputElement>('#partyAddress')!.value,isActive:true});await persist(next);toast('شخص ثبت شد','success')}catch(e){toast(e instanceof Error?e.message:'خطا در ثبت شخص','error')}});
   el<HTMLButtonElement>('#openInvoiceTypeSheet')?.addEventListener('click',openInvoiceTypeSheet);
   el<HTMLButtonElement>('#invoiceOpenItems')?.addEventListener('click',openInvoiceItemsSheet);
   el<HTMLInputElement>('#invoiceDescriptionVisible')?.addEventListener('input',event=>{const hidden=el<HTMLInputElement>('#invoiceDescription');if(hidden)hidden.value=(event.target as HTMLInputElement).value;});
   el<HTMLButtonElement>('#invoiceAddLine')?.addEventListener('click',()=>addInvoiceLine());
   const previousInvoiceScanHandler=(window as any).__anbarinInvoiceBarcodeHandler as EventListener|undefined;
   if(previousInvoiceScanHandler)window.removeEventListener('anbarin:invoice-barcode-scan',previousInvoiceScanHandler);
-  const invoiceScanHandler:EventListener=(event:Event)=>{const detail=(event as CustomEvent<{code:string}>).detail;const code=digits(detail?.code||'').trim();const product=findProductByCode(code);const status=el<HTMLElement>('#invoiceScanStatus');if(product){addProductToInvoice(product.id,true);if(status)status.textContent=`✓ ${product.name} به فاکتور اضافه شد؛ آماده اسکن بعدی`}else{if(status)status.textContent=`بارکد ${code} در کالاها ثبت نشده است`;toast(`کالایی با بارکد ${code} پیدا نشد. ابتدا کالا را ثبت کنید.`,'error');el<HTMLInputElement>('#invoiceBarcodeInput')?.focus({preventScroll:true})}};
+  const invoiceScanHandler:EventListener=(event:Event)=>{const detail=(event as CustomEvent<{code:string}>).detail;const code=digits(detail?.code||'').trim();const product=findProductByCode(code);const status=el<HTMLElement>('#invoiceScanStatus');if(product){addProductToInvoice(product.id,true);if(status)status.textContent=`✓ ${product.name} اضافه شد`}else{if(status)status.textContent=`بارکد ${code} پیدا نشد`;toast(`کالایی با بارکد ${code} پیدا نشد.`,'error');el<HTMLInputElement>('#invoiceProductSearch')?.focus({preventScroll:true})}};
   (window as any).__anbarinInvoiceBarcodeHandler=invoiceScanHandler;window.addEventListener('anbarin:invoice-barcode-scan',invoiceScanHandler);
   const searchInput=el<HTMLInputElement>('#invoiceProductSearch');let suggestionIndex=0;
-  const addBySearch=()=>{const value=searchInput?.value||'';const product=resolveInvoiceProduct(value);if(!product){toast('یک کالا از پیشنهادهای جست‌وجو انتخاب کنید یا نام دقیق‌تری وارد کنید.','error');return;}addProductToInvoice(product.id);const suggestions=el<HTMLDivElement>('#invoiceProductSuggestions');if(suggestions)suggestions.hidden=true;};
+  const addBySearch=()=>{
+    const value=(searchInput?.value||'').trim();
+    if(!value){toast('نام کالا یا بارکد را وارد کنید.','error');return;}
+    const byCode=findProductByCode(digits(value));
+    const product=byCode||resolveInvoiceProduct(value);
+    if(!product){toast('کالا پیدا نشد. نام دقیق‌تر یا بارکد صحیح وارد کنید.','error');return;}
+    addProductToInvoice(product.id,true);
+    const suggestions=el<HTMLDivElement>('#invoiceProductSuggestions');
+    if(suggestions)suggestions.hidden=true;
+    const status=el<HTMLElement>('#invoiceScanStatus');
+    if(status)status.textContent=`✓ ${product.name} اضافه شد`;
+  };
   el<HTMLButtonElement>('#invoiceProductAdd')?.addEventListener('click',addBySearch);
   searchInput?.addEventListener('input',()=>{suggestionIndex=0;renderInvoiceProductSuggestions(searchInput.value,suggestionIndex)});
   searchInput?.addEventListener('keydown',event=>{const matches=invoiceProductMatches(searchInput.value);if(event.key==='ArrowDown'&&matches.length){event.preventDefault();suggestionIndex=Math.min(matches.length-1,suggestionIndex+1);renderInvoiceProductSuggestions(searchInput.value,suggestionIndex)}else if(event.key==='ArrowUp'&&matches.length){event.preventDefault();suggestionIndex=Math.max(0,suggestionIndex-1);renderInvoiceProductSuggestions(searchInput.value,suggestionIndex)}else if(event.key==='Enter'){event.preventDefault();const chosen=matches[suggestionIndex]||resolveInvoiceProduct(searchInput.value);if(chosen)addProductToInvoice(chosen.id);else addBySearch();const box=el<HTMLDivElement>('#invoiceProductSuggestions');if(box)box.hidden=true;}else if(event.key==='Escape'){const box=el<HTMLDivElement>('#invoiceProductSuggestions');if(box)box.hidden=true;}});
   document.addEventListener('click',event=>{if(!(event.target as HTMLElement).closest('.invoice-live-search')){const box=el<HTMLDivElement>('#invoiceProductSuggestions');if(box)box.hidden=true;}});
-  const addByBarcode=()=>{const input=el<HTMLInputElement>('#invoiceBarcodeInput');const code=digits(input?.value||'').trim();const product=findProductByCode(code);const status=el<HTMLElement>('#invoiceScanStatus');if(!product){if(status)status.textContent=`بارکد ${code||'واردشده'} در کالاها ثبت نشده است`;toast('بارکد در فهرست کالاها ثبت نشده است.','error');input?.focus({preventScroll:true});return;}addProductToInvoice(product.id,true);if(status)status.textContent=`✓ ${product.name} اضافه شد؛ ورودی برای بارکد بعدی آماده است`;};
-  el<HTMLButtonElement>('#invoiceBarcodeAdd')?.addEventListener('click',addByBarcode);
-  el<HTMLInputElement>('#invoiceBarcodeInput')?.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();addByBarcode()}});
   el<HTMLButtonElement>('#invoiceScanOpen')?.addEventListener('click',()=>{const continuous=el<HTMLInputElement>('#scannerContinuous');(window as any).__anbarinScannerContinuousBeforeInvoice=continuous?.checked??true;if(continuous)continuous.checked=true;(window as any).__anbarinInvoiceScanActive=true;openScanner({title:'اسکن پیوسته بارکد کالا برای فاکتور'})});
   const invoiceDateInput=el<HTMLInputElement>('#invoiceDate');const invoiceCalendarPanel=el<HTMLDivElement>('#invoiceJalaliCalendarPanel');let calendarYear=Number(todayJalali().split('/')[0]),calendarMonth=Number(todayJalali().split('/')[1]);
   const jalaliParts=(date:Date)=>{const p=new Intl.DateTimeFormat('en-US-u-ca-persian-nu-latn',{year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(date);return {y:Number(p.find(x=>x.type==='year')?.value),m:Number(p.find(x=>x.type==='month')?.value),d:Number(p.find(x=>x.type==='day')?.value)}};
-  const renderInvoiceJalaliCalendar=()=>{if(!invoiceCalendarPanel)return;const firstGregorian=new Date(calendarYear+621,2,18,12);let first:Date|null=null;for(let i=-3;i<5;i++){const d=new Date(firstGregorian);d.setDate(d.getDate()+i);const p=jalaliParts(d);if(p.y===calendarYear&&p.m===calendarMonth&&p.d===1){first=d;break;}}if(!first)return;const days:Date[]=[];for(let i=0;i<32;i++){const d=new Date(first);d.setDate(d.getDate()+i);const p=jalaliParts(d);if(p.y!==calendarYear||p.m!==calendarMonth)break;days.push(d);}const offset=(first.getDay()+1)%7;const names=['ش','ی','د','س','چ','پ','ج'];invoiceCalendarPanel.innerHTML=`<div class="jalali-cal-head"><button type="button" data-cal-prev>‹</button><b>${['','فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'][calendarMonth]} ${calendarYear}</b><button type="button" data-cal-next>›</button></div><div class="jalali-cal-grid">${names.map(n=>`<span class="weekday">${n}</span>`).join('')}${Array.from({length:offset},()=>'<span></span>').join('')}${days.map(d=>{const p=jalaliParts(d);return `<button type="button" data-jdate="${p.y}/${String(p.m).padStart(2,'0')}/${String(p.d).padStart(2,'0')}">${p.d}</button>`}).join('')}</div>`;invoiceCalendarPanel.hidden=false;invoiceCalendarPanel.querySelector('[data-cal-prev]')?.addEventListener('click',()=>{calendarMonth--;if(calendarMonth<1){calendarMonth=12;calendarYear--;}renderInvoiceJalaliCalendar()});invoiceCalendarPanel.querySelector('[data-cal-next]')?.addEventListener('click',()=>{calendarMonth++;if(calendarMonth>12){calendarMonth=1;calendarYear++;}renderInvoiceJalaliCalendar()});invoiceCalendarPanel.querySelectorAll<HTMLButtonElement>('[data-jdate]').forEach(b=>b.addEventListener('click',()=>{if(invoiceDateInput){invoiceDateInput.value=b.dataset.jdate!;invoiceDateInput.dispatchEvent(new Event('change',{bubbles:true}));}invoiceCalendarPanel.hidden=true;}));};
-  el<HTMLButtonElement>('#invoiceJalaliCalendar')?.addEventListener('click',()=>{const v=(invoiceDateInput?.value||todayJalali()).split('/').map(Number);if(v.length===3&&v[0]>1200){calendarYear=v[0];calendarMonth=v[1];}renderInvoiceJalaliCalendar()});
+  const renderInvoiceJalaliCalendar=()=>{
+    if(!invoiceCalendarPanel||calendarMonth<1||calendarMonth>12)return;
+    // ابتدا روز اول سال شمسی را پیدا می‌کنیم؛ سپس با طول ماه‌های شمسی به ماه درخواستی می‌رسیم.
+    const yearProbe=new Date(calendarYear+621,2,20,12);
+    let yearStart:Date|null=null;
+    for(let i=-7;i<=7;i++){
+      const candidate=new Date(yearProbe);
+      candidate.setDate(candidate.getDate()+i);
+      const parts=jalaliParts(candidate);
+      if(parts.y===calendarYear&&parts.m===1&&parts.d===1){yearStart=candidate;break;}
+    }
+    if(!yearStart)return;
+    const monthOffset=calendarMonth<=6?(calendarMonth-1)*31:186+(calendarMonth-7)*30;
+    const first=new Date(yearStart);
+    first.setDate(first.getDate()+monthOffset);
+    const firstParts=jalaliParts(first);
+    if(firstParts.y!==calendarYear||firstParts.m!==calendarMonth||firstParts.d!==1)return;
+    const days:Date[]=[];
+    for(let i=0;i<32;i++){
+      const day=new Date(first);
+      day.setDate(day.getDate()+i);
+      const parts=jalaliParts(day);
+      if(parts.y!==calendarYear||parts.m!==calendarMonth)break;
+      days.push(day);
+    }
+    const offset=(first.getDay()+1)%7;
+    const names=['ش','ی','د','س','چ','پ','ج'];
+    const monthNames=['','فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
+    invoiceCalendarPanel.innerHTML=`<div class="jalali-cal-head"><button type="button" data-cal-prev aria-label="ماه قبل">‹</button><b>${monthNames[calendarMonth]} ${calendarYear}</b><button type="button" data-cal-next aria-label="ماه بعد">›</button></div><div class="jalali-cal-grid">${names.map(n=>`<span class="weekday">${n}</span>`).join('')}${Array.from({length:offset},()=>'<span></span>').join('')}${days.map(day=>{const parts=jalaliParts(day);return `<button type="button" data-jdate="${parts.y}/${String(parts.m).padStart(2,'0')}/${String(parts.d).padStart(2,'0')}">${parts.d}</button>`}).join('')}</div>`;
+    invoiceCalendarPanel.hidden=false;
+    invoiceCalendarPanel.querySelector('[data-cal-prev]')?.addEventListener('click',()=>{
+      calendarMonth--;
+      if(calendarMonth<1){calendarMonth=12;calendarYear--;}
+      renderInvoiceJalaliCalendar();
+    });
+    invoiceCalendarPanel.querySelector('[data-cal-next]')?.addEventListener('click',()=>{
+      calendarMonth++;
+      if(calendarMonth>12){calendarMonth=1;calendarYear++;}
+      renderInvoiceJalaliCalendar();
+    });
+    invoiceCalendarPanel.querySelectorAll<HTMLButtonElement>('[data-jdate]').forEach(button=>button.addEventListener('click',()=>{
+      if(invoiceDateInput){
+        invoiceDateInput.value=button.dataset.jdate!;
+        invoiceDateInput.dispatchEvent(new Event('input',{bubbles:true}));
+        invoiceDateInput.dispatchEvent(new Event('change',{bubbles:true}));
+      }
+      invoiceCalendarPanel.hidden=true;
+    }));
+  };
+  el<HTMLButtonElement>('#invoiceJalaliCalendar')?.addEventListener('click',()=>{
+    const rawDate=digits(invoiceDateInput?.value||todayJalali());
+    const v=rawDate.split('/').map(Number);
+    if(v.length===3&&Number.isFinite(v[0])&&Number.isFinite(v[1])&&v[0]>1200&&v[1]>=1&&v[1]<=12){
+      calendarYear=v[0];calendarMonth=v[1];
+    }else{
+      const today=digits(todayJalali()).split('/').map(Number);
+      calendarYear=today[0];calendarMonth=today[1];
+    }
+    renderInvoiceJalaliCalendar();
+  });
   el<HTMLInputElement>('#invoiceTax')?.addEventListener('input',updateInvoiceTotals);
   el<HTMLButtonElement>('#invoiceAddPayment')?.addEventListener('click',()=>addInvoicePaymentRow());el<HTMLDivElement>('#invoicePaymentRows')?.addEventListener('input',updateInvoiceTotals);el<HTMLDivElement>('#invoicePaymentRows')?.addEventListener('change',updateInvoiceTotals);
   el<HTMLInputElement>('#invoiceTaxRate')?.addEventListener('change',applyInvoiceTaxRate);
-  el<HTMLButtonElement>('#invoiceSettle')?.addEventListener('click',()=>{if(!commerce)return;const number=el<HTMLInputElement>('#invoiceNumber')?.value.trim();const target=commerce.invoices.find(i=>i.number===number&&i.type===activeInvoiceType);if(!target){toast('ابتدا فاکتور را ذخیره کنید تا برگه تسویه به آن متصل شود.','error');return;}openInvoiceSettlementSheet(target.id);});
-  el<HTMLButtonElement>('#invoiceSave')?.addEventListener('click',async()=>{if(!commerce)return;try{const type=el<HTMLInputElement>('#invoiceType')!.value as InvoiceType;const invoiceNo=el<HTMLInputElement>('#invoiceNumber')!.value.trim();if(commerce.invoices.some(i=>i.id!==editingInvoiceId&&i.type===type&&i.number===invoiceNo))throw new Error('شماره فاکتور در این نوع فاکتور تکراری است.');const rows=[...document.querySelectorAll<HTMLElement>('.commerce-line')];const lines=rows.map(row=>{const q=Number(digits(row.querySelector<HTMLInputElement>('[data-line-qty]')!.value).replace(',','.'));if(!Number.isFinite(q)||q>999999999)throw new Error('تعداد نامعتبر است.');const productId=row.querySelector<HTMLSelectElement>('[data-line-product]')!.value;const product=products.find(p=>p.id===productId);const description=row.querySelector<HTMLInputElement>('[data-line-desc]')!.value||(product?.name||'');return {description,unit:row.querySelector<HTMLInputElement>('[data-line-unit]')!.value,quantityMilli:Math.round(q*1000),unitPriceRial:parseMoneyToRial(digits(row.querySelector<HTMLInputElement>('[data-line-price]')!.value),currency),discountRial:parseMoneyToRial(digits(row.querySelector<HTMLInputElement>('[data-line-discount]')!.value||'0'),currency),...(product?{productId:product.id,warehouse:product.warehouse||'انبار اصلی'}:{})}});const invoiceDate=digits(el<HTMLInputElement>('#invoiceDate')!.value);const fiscalPeriodId=invoicePeriodForDate(invoiceDate);const invoice=buildInvoice({type,number:el<HTMLInputElement>('#invoiceNumber')!.value,date:invoiceDate,dueDate:'',paymentTerms:'',paymentParts:[],fiscalPeriodId,partyId:el<HTMLSelectElement>('#invoiceParty')!.value,description:el<HTMLInputElement>('#invoiceDescription')!.value,notes:el<HTMLTextAreaElement>('#invoiceNotes')!.value,taxRateBps:Math.round(Number(digits(el<HTMLInputElement>('#invoiceTaxRate')!.value||'0').replace(',','.'))*100),lines,taxRial:parseMoneyToRial(digits(el<HTMLInputElement>('#invoiceTax')!.value||'0'),currency)},commerce.parties);if(editingInvoiceId){const next=updateDraftInvoice(editingInvoiceId,{type,number:el<HTMLInputElement>('#invoiceNumber')!.value,date:invoiceDate,dueDate:'',paymentTerms:'',paymentParts:[],fiscalPeriodId,partyId:el<HTMLSelectElement>('#invoiceParty')!.value,description:el<HTMLInputElement>('#invoiceDescription')!.value,notes:el<HTMLTextAreaElement>('#invoiceNotes')!.value,taxRateBps:Math.round(Number(digits(el<HTMLInputElement>('#invoiceTaxRate')!.value||'0').replace(',','.'))*100),lines,taxRial:parseMoneyToRial(digits(el<HTMLInputElement>('#invoiceTax')!.value||'0'),currency)},commerce);editingInvoiceId=null;await persist(next);toast('تغییرات پیش‌نویس ذخیره شد','success')}else{const next={...commerce,invoices:[...commerce.invoices,invoice]};await persist(next);toast('پیش‌نویس فاکتور ذخیره شد','success')}}catch(e){toast(e instanceof Error?e.message:'خطا در ثبت فاکتور','error')}});
+  const saveInvoiceDraft=async(quiet=false):Promise<string|null>=>{
+    if(!commerce)return null;
+    try{
+      const type=el<HTMLInputElement>('#invoiceType')!.value as InvoiceType;
+      const invoiceNo=el<HTMLInputElement>('#invoiceNumber')!.value.trim();
+      if(!invoiceNo)throw new Error('شماره فاکتور را وارد کنید.');
+      if(!el<HTMLSelectElement>('#invoiceParty')!.value)throw new Error('طرف حساب را انتخاب کنید.');
+      if(commerce.invoices.some(i=>i.id!==editingInvoiceId&&i.type===type&&i.number===invoiceNo))throw new Error('شماره فاکتور در این نوع فاکتور تکراری است.');
+      const rows=[...document.querySelectorAll<HTMLElement>('.commerce-line')];
+      if(!rows.length)throw new Error('حداقل یک قلم به فاکتور اضافه کنید.');
+      const lines=rows.map(row=>{
+        const q=Number(digits(row.querySelector<HTMLInputElement>('[data-line-qty]')!.value).replace(',','.'));
+        if(!Number.isFinite(q)||q<=0||q>999999999)throw new Error('تعداد نامعتبر است.');
+        const productId=row.querySelector<HTMLInputElement>('[data-line-product]')!.value;
+        const product=products.find(p=>p.id===productId);
+        const description=row.querySelector<HTMLInputElement>('[data-line-desc]')!.value||(product?.name||'');
+        if(!description.trim())throw new Error('شرح هر ردیف را وارد کنید.');
+        return {description,unit:row.querySelector<HTMLInputElement>('[data-line-unit]')!.value,quantityMilli:Math.round(q*1000),unitPriceRial:parseMoneyToRial(digits(row.querySelector<HTMLInputElement>('[data-line-price]')!.value),currency),discountRial:parseMoneyToRial(digits(row.querySelector<HTMLInputElement>('[data-line-discount]')!.value||'0'),currency),...(product?{productId:product.id,warehouse:product.warehouse||'انبار اصلی'}:{})};
+      });
+      const invoiceDate=digits(el<HTMLInputElement>('#invoiceDate')!.value);
+      const fiscalPeriodId=invoicePeriodForDate(invoiceDate);
+      const payload={type,number:el<HTMLInputElement>('#invoiceNumber')!.value,date:invoiceDate,dueDate:'',paymentTerms:'',paymentParts:[] as InvoicePaymentPart[],fiscalPeriodId,partyId:el<HTMLSelectElement>('#invoiceParty')!.value,description:el<HTMLInputElement>('#invoiceDescription')!.value,notes:el<HTMLTextAreaElement>('#invoiceNotes')!.value,taxRateBps:Math.round(Number(digits(el<HTMLInputElement>('#invoiceTaxRate')!.value||'0').replace(',','.'))*100),lines,taxRial:parseMoneyToRial(digits(el<HTMLInputElement>('#invoiceTax')!.value||'0'),currency)};
+      let savedId='';
+      if(editingInvoiceId){
+        const next=updateDraftInvoice(editingInvoiceId,payload,commerce);
+        savedId=editingInvoiceId;
+        editingInvoiceId=null;
+        await persist(next);
+        if(!quiet)toast('پیش‌نویس ذخیره شد','success');
+      }else{
+        const invoice=buildInvoice(payload,commerce.parties);
+        savedId=invoice.id;
+        const next={...commerce,invoices:[...commerce.invoices,invoice]};
+        await persist(next);
+        if(!quiet)toast('پیش‌نویس ذخیره شد','success');
+      }
+      return savedId;
+    }catch(e){
+      toast(e instanceof Error?e.message:'خطا در ذخیره فاکتور','error');
+      return null;
+    }
+  };
+  el<HTMLButtonElement>('#invoiceSave')?.addEventListener('click',async()=>{await saveInvoiceDraft(false);});
+  el<HTMLButtonElement>('#invoiceSettle')?.addEventListener('click',async()=>{
+    if(!commerce)return;
+    const number=el<HTMLInputElement>('#invoiceNumber')?.value.trim();
+    let target=commerce.invoices.find(i=>i.number===number&&i.type===activeInvoiceType&&i.status==='draft');
+    if(!target){
+      const savedId=await saveInvoiceDraft(true);
+      if(!savedId||!commerce)return;
+      target=commerce.invoices.find(i=>i.id===savedId);
+    }
+    if(!target){toast('فاکتور برای تسویه آماده نشد.','error');return;}
+    if(target.status!=='draft'){toast('این فاکتور قبلاً قطعی شده است.','error');return;}
+    openInvoiceSettlementSheet(target.id);
+  });
   document.querySelectorAll<HTMLElement>('[data-edit-invoice]').forEach(b=>b.addEventListener('click',()=>startInvoiceEdit(b.dataset.editInvoice!)));
   el<HTMLButtonElement>('#invoiceCancelEdit')?.addEventListener('click',cancelInvoiceEdit);
   document.querySelectorAll<HTMLElement>('[data-print-invoice]').forEach(b=>b.addEventListener('click',()=>printInvoice(b.dataset.printInvoice!)));
