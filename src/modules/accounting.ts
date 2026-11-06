@@ -69,6 +69,8 @@ export interface AccountingSettings {
   defaultCostingMethod: 'moving-average' | 'fifo';
   allowNegativeStockByWarehouse: Record<string, boolean>;
   chartInitialized: boolean;
+  /** سال مالی فعال برای ثبت اسناد و عملیات روزمره */
+  activeFiscalPeriodId?: string;
 }
 
 export interface AccountingData {
@@ -344,6 +346,26 @@ export function validateJournalEntry(entry: Pick<JournalEntry, 'fiscalPeriodId' 
   if (requireBalance && debit !== credit) errors.push('سند تراز نیست؛ جمع بدهکار و بستانکار باید برابر باشد.');
   if (requireBalance && debit <= 0) errors.push('مبلغ سند باید بیشتر از صفر باشد.');
   return errors;
+}
+
+
+/** سال مالی فعال؛ در صورت نبود، اولین سال باز انتخاب و ذخیره می‌شود. */
+export function resolveActiveFiscalPeriod(data: AccountingData): FiscalPeriod {
+  const open = data.fiscalPeriods.filter((p) => p.status === 'open');
+  if (!open.length) throw new Error('هیچ سال مالی بازی تعریف نشده است. ابتدا از بخش سال مالی یک دوره باز ایجاد کنید.');
+  const activeId = data.settings.activeFiscalPeriodId;
+  const active = open.find((p) => p.id === activeId) || open[open.length - 1];
+  return active;
+}
+
+export function withActiveFiscalPeriod(data: AccountingData, periodId: string): AccountingData {
+  const period = data.fiscalPeriods.find((p) => p.id === periodId);
+  if (!period) throw new Error('سال مالی پیدا نشد.');
+  if (period.status !== 'open') throw new Error('فقط سال مالی باز را می‌توان فعال کرد.');
+  return {
+    ...data,
+    settings: { ...data.settings, activeFiscalPeriodId: periodId },
+  };
 }
 
 export function createFiscalPeriod(input: Pick<FiscalPeriod, 'title' | 'startDate' | 'endDate'>, existing: FiscalPeriod[]): FiscalPeriod {

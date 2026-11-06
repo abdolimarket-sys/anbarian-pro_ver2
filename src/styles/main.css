@@ -1497,3 +1497,63 @@ details[open] > .category-summary .category-chevron { transform: rotate(180deg);
   #accountingWorkspace .accounting-shortcuts{grid-template-columns:repeat(2,minmax(0,1fr));}
   #accountingWorkspace .stats-grid{grid-template-columns:1fr 1fr;}
 }
+
+#accountingCommerceWorkspace .cash-entry-card,
+#commercePanelSheet .cash-entry-card{
+  direction:rtl;text-align:right;
+}
+#accountingCommerceWorkspace .cash-entry-grid,
+#commercePanelSheet .cash-entry-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px 14px;
+  margin:12px 0 14px;
+  direction:rtl;
+  text-align:right;
+}
+#accountingCommerceWorkspace .cash-entry-grid .field,
+#commercePanelSheet .cash-entry-grid .field{
+  margin:0;text-align:right;direction:rtl;
+}
+@media(max-width:560px){
+  #accountingCommerceWorkspace .cash-entry-grid,
+  #commercePanelSheet .cash-entry-grid{grid-template-columns:1fr}
+}
+
+#accountingCommerceWorkspace .bank-panel-card,
+#commercePanelSheet .bank-panel-card{
+  direction:rtl;text-align:right;
+}
+#accountingCommerceWorkspace .bank-entry-grid,
+#commercePanelSheet .bank-entry-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px 14px;
+  margin:12px 0 14px;
+  direction:rtl;
+  text-align:right;
+}
+#accountingCommerceWorkspace .bank-entry-grid .field,
+#commercePanelSheet .bank-entry-grid .field{
+  margin:0;text-align:right;direction:rtl;
+}
+@media(max-width:560px){
+  #accountingCommerceWorkspace .bank-entry-grid,
+  #commercePanelSheet .bank-entry-grid{grid-template-columns:1fr}
+}
+
+#commercePanelSheet .bank-sub,
+#accountingCommerceWorkspace .bank-sub{
+  margin-top:12px;padding:12px 14px;border-radius:12px;
+  border:1px solid var(--border-color,#e2e8f0);
+  direction:rtl;text-align:right;
+}
+#commercePanelSheet .bank-sub>summary,
+#accountingCommerceWorkspace .bank-sub>summary{
+  cursor:pointer;font-weight:750;text-align:right;
+}
+#commercePanelSheet .bank-sub[open]>summary,
+#accountingCommerceWorkspace .bank-sub[open]>summary{
+  margin-bottom:10px;padding-bottom:8px;
+  border-bottom:1px solid var(--border-color,#e8ecf1);
+}

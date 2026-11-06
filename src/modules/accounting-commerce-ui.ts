@@ -1,5 +1,5 @@
 /** رابط فاکتورها و دریافت/پرداخت */
-import { loadAccountingData, parseMoneyToRial, formatMoneyFromRial } from './accounting';
+import { loadAccountingData, parseMoneyToRial, formatMoneyFromRial, resolveActiveFiscalPeriod } from './accounting';
 import {
   loadCommerceData, saveCommerceData, buildInvoice, updateDraftInvoice, postInvoice,
   createCashTransaction, ensureCommerceAccounts, updateChequeStatus, invoiceOutstanding,
@@ -43,6 +43,10 @@ function partyOptions(type?:'customer'|'supplier'):string {
 }
 function periodOptions():string {
   return loadPeriodOptions;
+}
+async function activeFiscalPeriodId():Promise<string> {
+  const d=await loadAccountingData();
+  return resolveActiveFiscalPeriod(d).id;
 }
 let loadPeriodOptions='';
 function accountOptions():string {
@@ -235,10 +239,66 @@ function printInvoice(invoiceId:string):void {
   w.document.close(); w.focus();
 }
 async function bankPanel():Promise<string>{
-  const [balances,recon]=await Promise.all([getBankAccountBalances(),loadBankReconciliation()]);
+  const [balances,recon,accData]=await Promise.all([getBankAccountBalances(),loadBankReconciliation(),loadAccountingData()]);
   const opts=balances.map(a=>`<option value="${esc(a.id)}">${esc(a.code)} — ${esc(a.title)}</option>`).join('');
-  const rows=recon.rows.slice().reverse().slice(0,100).map(r=>`<tr><td>${esc(r.date)}</td><td>${esc(r.description)}</td><td>${esc(r.reference||'—')}</td><td>${money(Math.abs(r.amountRial))} ${r.amountRial>0?'واریز':'برداشت'}</td><td>${r.matched?'تطبیق‌شده':'تطبیق‌نشده'}</td></tr>`).join('')||'<tr><td colspan="5">هنوز صورت‌حسابی وارد نشده است.</td></tr>';
-  return `<div class="card" style="margin-top:12px"><h3>مدیریت بانک و صندوق</h3><div class="table-wrap"><table class="data-table"><thead><tr><th>کد</th><th>حساب</th><th>مانده دفتری</th></tr></thead><tbody>${balances.map(a=>`<tr><td>${esc(a.code)}</td><td>${esc(a.title)}</td><td>${money(a.balanceRial)}</td></tr>`).join('')||'<tr><td colspan="3">حساب تفصیلی بانک یا صندوق تعریف نشده است.</td></tr>'}</tbody></table></div><h4>انتقال بین حساب‌ها</h4><div class="form-grid"><label class="field">شماره انتقال<input id="bankTransferNo"></label><label class="field">تاریخ شمسی<input id="bankTransferDate" placeholder="۱۴۰۵/۰۱/۰۱"></label><label class="field">سال مالی<select id="bankTransferPeriod">${periodOptions()}</select></label><label class="field">حساب مبدأ<select id="bankTransferFrom">${opts}</select></label><label class="field">حساب مقصد<select id="bankTransferTo">${opts}</select></label><label class="field">مبلغ (${currency==='toman'?'تومان':'ریال'})<input id="bankTransferAmount" inputmode="numeric"></label><label class="field">کارمزد (${currency==='toman'?'تومان':'ریال'})<input id="bankTransferFee" inputmode="numeric" value="0"></label><label class="field">حساب هزینه کارمزد<select id="bankTransferFeeAccount"><option value="">انتخاب حساب هزینه</option>${(await loadAccountingData()).accounts.filter(a=>a.isActive&&a.level==='detail'&&/(هزینه|کارمزد)/.test(a.title)).map(a=>`<option value="${esc(a.id)}">${esc(a.code)} — ${esc(a.title)}</option>`).join('')}</select></label><label class="field">شرح<input id="bankTransferDescription"></label></div><button class="btn btn-primary" id="bankTransferSave">ثبت انتقال و سند حسابداری</button><h4 style="margin-top:18px">ورود صورت‌حساب بانکی و مغایرت‌گیری</h4><div class="form-grid"><label class="field">حساب بانکی<select id="bankStatementAccount">${opts}</select></label><label class="field">فایل CSV<input id="bankStatementFile" type="file" accept=".csv,text/csv"></label></div><p class="hint">ستون‌های موردنیاز: date, description, amount؛ ستون‌های reference و balance اختیاری‌اند. مبلغ مثبت یعنی واریز و مبلغ منفی یعنی برداشت. تاریخ به صورت شمسی YYYY/MM/DD باشد.</p><button class="btn btn-secondary" id="bankStatementImport">ورود و تطبیق خودکار</button><div class="table-wrap"><table class="data-table"><thead><tr><th>تاریخ</th><th>شرح</th><th>شماره پیگیری</th><th>مبلغ</th><th>وضعیت</th></tr></thead><tbody>${rows}</tbody></table></div><p class="hint">تطبیق خودکار فقط با تطابق دقیق حساب، تاریخ و مبلغ انجام می‌شود؛ ردیف‌های نامنطبق بدون تغییر سند حسابداری باقی می‌مانند.</p></div>`;
+  const feeOpts=accData.accounts.filter(a=>a.isActive&&a.level==='detail'&&/(هزینه|کارمزد)/.test(a.title)).map(a=>`<option value="${esc(a.id)}">${esc(a.code)} — ${esc(a.title)}</option>`).join('');
+  const txs=(commerce?.cashTransactions||[]).slice().reverse();
+  const partyName=(id?:string)=>esc(commerce?.parties.find(p=>p.id===id)?.name||'—');
+  const chequeSt=(s?:string)=>s==='pending'?'در جریان':s==='cleared'?'وصول':s==='bounced'?'برگشتی':s==='void'?'باطل':(s||'—');
+  const recvCheques=txs.filter(t=>t.method==='cheque'&&t.type==='receipt');
+  const payCheques=txs.filter(t=>t.method==='cheque'&&t.type==='payment');
+  const cashBook=txs.filter(t=>t.method==='cash').slice(0,100);
+  const bankBook=txs.filter(t=>t.method==='bank'||t.method==='card'||t.method==='transfer').slice(0,100);
+  const reconRows=recon.rows.slice().reverse().slice(0,80).map(r=>`<tr><td>${esc(r.date)}</td><td>${esc(r.description)}</td><td>${money(Math.abs(r.amountRial))} ${r.amountRial>0?'واریز':'برداشت'}</td><td>${r.matched?'تطبیق':'—'}</td></tr>`).join('')||'<tr><td colspan="4">صورت‌حساب وارد نشده</td></tr>';
+  const chequeRow=(t:typeof txs[0],showActions:boolean)=>{
+    const pending=t.chequeStatus==='pending';
+    const actions=showActions&&pending
+      ?`<button type="button" class="btn btn-sm btn-primary" data-cheque-clear="${t.id}">وصول</button> <button type="button" class="btn btn-sm btn-secondary" data-cheque-bounce="${t.id}">برگشت</button>`
+      :chequeSt(t.chequeStatus);
+    return `<tr><td>${esc(t.date)}</td><td>${esc(t.number)}</td><td>${partyName(t.partyId)}</td><td>${money(t.amountRial)}</td><td>${esc(t.chequeNumber||'—')}</td><td>${esc(t.chequeDueDate||'—')}</td><td>${actions}</td></tr>`;
+  };
+  const bookRow=(t:typeof txs[0])=>`<tr><td>${esc(t.date)}</td><td>${esc(t.number)}</td><td>${t.type==='receipt'?'واریز':'برداشت'}</td><td>${partyName(t.partyId)}</td><td>${money(t.amountRial)}</td><td>${t.method==='cash'?'نقد':t.method==='card'?'کارت':t.method==='transfer'?'حواله':'بانک'}</td></tr>`;
+  return `<div class="card bank-panel-card" dir="rtl" style="margin-top:12px;text-align:right">
+<h3>بانک و صندوق</h3>
+<div class="table-wrap"><table class="data-table"><thead><tr><th>کد</th><th>حساب</th><th>مانده</th></tr></thead><tbody>${balances.map(a=>`<tr><td>${esc(a.code)}</td><td>${esc(a.title)}</td><td>${money(a.balanceRial)}</td></tr>`).join('')||'<tr><td colspan="3">حسابی تعریف نشده</td></tr>'}</tbody></table></div>
+
+<details class="card bank-sub" open><summary>وصول چک دریافتی</summary>
+<div class="table-wrap"><table class="data-table"><thead><tr><th>تاریخ</th><th>شماره</th><th>طرف</th><th>مبلغ</th><th>شماره چک</th><th>سررسید</th><th>عملیات</th></tr></thead><tbody>${recvCheques.map(t=>chequeRow(t,true)).join('')||'<tr><td colspan="7">چک دریافتی نیست</td></tr>'}</tbody></table></div>
+</details>
+
+<details class="card bank-sub"><summary>چک پرداختی</summary>
+<div class="table-wrap"><table class="data-table"><thead><tr><th>تاریخ</th><th>شماره</th><th>طرف</th><th>مبلغ</th><th>شماره چک</th><th>سررسید</th><th>وضعیت</th></tr></thead><tbody>${payCheques.map(t=>chequeRow(t,true)).join('')||'<tr><td colspan="7">چک پرداختی نیست</td></tr>'}</tbody></table></div>
+</details>
+
+<details class="card bank-sub"><summary>صورتحساب صندوق</summary>
+<div class="table-wrap"><table class="data-table"><thead><tr><th>تاریخ</th><th>شماره</th><th>نوع</th><th>طرف</th><th>مبلغ</th><th>روش</th></tr></thead><tbody>${cashBook.map(bookRow).join('')||'<tr><td colspan="6">گردشی نیست</td></tr>'}</tbody></table></div>
+</details>
+
+<details class="card bank-sub"><summary>صورتحساب بانک</summary>
+<div class="form-grid bank-entry-grid">
+<label class="field">حساب<select id="bankStatementAccount">${opts}</select></label>
+<label class="field">فایل CSV<input id="bankStatementFile" type="file" accept=".csv,text/csv"></label>
+</div>
+<button class="btn btn-secondary" id="bankStatementImport" type="button">ورود و تطبیق</button>
+<div class="table-wrap" style="margin-top:12px"><table class="data-table"><thead><tr><th>تاریخ</th><th>شرح</th><th>مبلغ</th><th>وضعیت</th></tr></thead><tbody>${reconRows}</tbody></table></div>
+<h4 style="margin-top:12px">گردش بانکی ثبت‌شده</h4>
+<div class="table-wrap"><table class="data-table"><thead><tr><th>تاریخ</th><th>شماره</th><th>نوع</th><th>طرف</th><th>مبلغ</th><th>روش</th></tr></thead><tbody>${bankBook.map(bookRow).join('')||'<tr><td colspan="6">گردشی نیست</td></tr>'}</tbody></table></div>
+</details>
+
+<details class="card bank-sub"><summary>سند انتقال</summary>
+<div class="form-grid bank-entry-grid">
+<label class="field">شماره<input id="bankTransferNo"></label>
+<label class="field">تاریخ<input id="bankTransferDate" placeholder="۱۴۰۵/۰۱/۰۱"></label>
+<label class="field">از حساب<select id="bankTransferFrom">${opts}</select></label>
+<label class="field">به حساب<select id="bankTransferTo">${opts}</select></label>
+<label class="field">مبلغ<input id="bankTransferAmount" inputmode="numeric" placeholder="۰"></label>
+<label class="field">کارمزد<input id="bankTransferFee" inputmode="numeric" value="0"></label>
+<label class="field">حساب کارمزد<select id="bankTransferFeeAccount"><option value="">اختیاری</option>${feeOpts}</select></label>
+<input type="hidden" id="bankTransferDescription" value="">
+</div>
+<button class="btn btn-primary" id="bankTransferSave" type="button">ثبت انتقال</button>
+</details>
+</div>`;
 }
 async function chequePanel():Promise<string>{
   const all=(commerce?.cashTransactions||[]).filter(t=>t.method==='cheque').slice().reverse();
@@ -372,10 +432,36 @@ async function inventoryReconciliationPanel():Promise<string>{
   return `<div class="card" style="margin-top:12px"><h3>تطبیق موجودی انبار و حسابداری</h3><p class="hint">این گزارش فقط‌خواندنی است؛ موجودی عملیاتی، دفتر بهای تمام‌شده و حساب معین موجودی کالا را مقایسه می‌کند. هیچ مقدار، سند یا مانده‌ای به‌صورت خودکار اصلاح نمی‌شود.</p><div class="form-grid"><div class="stat-card"><b>${fa(report.totalProducts)}</b><span>ردیف کالا / انبار</span></div><div class="stat-card"><b>${fa(report.issueCount)}</b><span>ردیف نیازمند بررسی</span></div><div class="stat-card"><b>${fa(report.systemQuantityMilli/1000)}</b><span>جمع تعداد عملیاتی</span></div><div class="stat-card"><b>${fa(report.costQuantityMilli/1000)}</b><span>جمع تعداد بهای تمام‌شده</span></div><div class="stat-card"><b>${money(report.inventoryValueRial)}</b><span>ارزش دفتر بهای تمام‌شده</span></div><div class="stat-card"><b>${money(report.ledgerInventoryRial)}</b><span>مانده حساب موجودی در دفتر کل</span></div></div><p class="hint">اختلاف تعداد: ${fa(report.quantityDiffMilli/1000)} · اختلاف ارزش (بهای تمام‌شده منهای دفتر کل): ${money(report.ledgerDiffRial)} · ${report.ledgerAccountFound?'حساب دفتر کل: '+esc(report.ledgerAccountTitle):'حساب معین موجودی کالا پیدا نشد.'}</p><div class="table-wrap"><table class="data-table"><thead><tr><th>کالا</th><th>انبار</th><th>تعداد عملیاتی</th><th>تعداد بهای تمام‌شده</th><th>اختلاف</th><th>ارزش موجودی</th><th>وضعیت</th></tr></thead><tbody>${rows}</tbody></table></div><p class="hint">توجه: مقایسه دفتر کل با ارزش فعلی بهای تمام‌شده، فقط زمانی قابل اتکاست که ثبت‌های موجودی از ابتدای دوره به‌طور کامل در هر دو زیرسیستم انجام شده باشند. اسناد دستی، موجودی افتتاحیه قدیمی، حذف کالا و گردش‌های خارج از فاکتور می‌توانند اختلاف ایجاد کنند. برای بررسی کامل، ردیف‌های مغایر و اسناد مبدأ را کنترل کنید.</p></div>`;
 }
 
+
+async function openCommercePanelSheet(section:'receipts'|'banking'|'management'|'inventory'):Promise<void> {
+  const titles:Record<string,string>={receipts:'دریافت / پرداخت',banking:'بانک',management:'سودآوری',inventory:'انبار'};
+  activeCommerceSection=section;
+  editingInvoiceId=null;
+  await render();
+  const root=el<HTMLDivElement>('#accountingCommerceWorkspace');
+  const sectionEl=root?.querySelector<HTMLElement>(`[data-commerce-section="${section}"]`);
+  if(!sectionEl){activeCommerceSection=isSaleInvoiceType(activeInvoiceType)?'sale':'purchase';return;}
+  document.getElementById('commercePanelSheet')?.remove();
+  const overlay=document.createElement('div');
+  overlay.id='commercePanelSheet';
+  overlay.dir='rtl';
+  overlay.style.cssText='position:fixed;inset:0;z-index:10050;background:var(--surface,#fff);color:var(--text,#222);overflow:auto;padding:clamp(12px,3vw,28px)';
+  overlay.innerHTML=`<div style="max-width:1100px;margin:0 auto"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px"><h2 style="margin:0">${titles[section]||'بازرگانی'}</h2><button type="button" class="btn btn-secondary" id="commercePanelClose">بازگشت</button></div><div id="commercePanelMount"></div></div>`;
+  document.body.appendChild(overlay);
+  const mount=overlay.querySelector<HTMLElement>('#commercePanelMount')!;
+  while(sectionEl.firstChild)mount.appendChild(sectionEl.firstChild);
+  const close=()=>{
+    overlay.remove();
+    activeCommerceSection=isSaleInvoiceType(activeInvoiceType)?'sale':'purchase';
+    render();
+  };
+  overlay.querySelector('#commercePanelClose')?.addEventListener('click',close);
+}
+
 function openInvoiceTypeSheet():void {
  document.getElementById('invoiceTypeSheet')?.remove();
  const overlay=document.createElement('div');overlay.id='invoiceTypeSheet';overlay.dir='rtl';overlay.style.cssText='position:fixed;inset:0;z-index:10040;background:var(--surface,#fff);color:var(--text,#222);overflow:auto;padding:clamp(16px,4vw,32px)';
- overlay.innerHTML=`<div style="max-width:760px;margin:8vh auto"><div style="display:flex;justify-content:space-between;align-items:center"><h2>انتخاب نوع سند</h2><button class="btn btn-secondary" id="invoiceTypeClose">بستن</button></div><p class="hint">نوع سند موردنظر را انتخاب کنید.</p><div class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(190px,1fr))"><button class="btn btn-primary" data-new-invoice-type="sale">فاکتور فروش</button><button class="btn btn-primary" data-new-invoice-type="purchase">فاکتور خرید</button><button class="btn btn-secondary" data-new-invoice-type="return-sale">برگشت از فروش</button><button class="btn btn-secondary" data-new-invoice-type="return-purchase">برگشت از خرید</button><button class="btn btn-secondary" data-new-invoice-type="proforma">پیش‌فاکتور</button></div><p class="hint" style="margin-top:14px">نوع سند را انتخاب کنید تا فرم متناسب باز شود.</p></div>`;
+ overlay.innerHTML=`<div style="max-width:760px;margin:8vh auto"><div style="display:flex;justify-content:space-between;align-items:center"><h2>فاکتور</h2><button class="btn btn-secondary" id="invoiceTypeClose">بستن</button></div><div class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(190px,1fr));margin-top:16px"><button class="btn btn-primary" data-new-invoice-type="sale">فروش</button><button class="btn btn-primary" data-new-invoice-type="purchase">خرید</button><button class="btn btn-secondary" data-new-invoice-type="return-sale">برگشت از فروش</button><button class="btn btn-secondary" data-new-invoice-type="return-purchase">برگشت از خرید</button><button class="btn btn-secondary" data-new-invoice-type="proforma">پیش‌فاکتور</button></div></div>`;
  document.body.appendChild(overlay);
  overlay.querySelector('#invoiceTypeClose')!.addEventListener('click',()=>overlay.remove());
  overlay.querySelectorAll<HTMLButtonElement>('[data-new-invoice-type]').forEach(b=>b.addEventListener('click',()=>{const type=b.dataset.newInvoiceType as InvoiceType;if(!['sale','purchase','return-sale','return-purchase','proforma'].includes(type))return;activeInvoiceType=type;activeCommerceSection=isSaleInvoiceType(type)?'sale':'purchase';overlay.remove();editingInvoiceId=null;render().then(()=>el<HTMLElement>('#invoiceFormTitle')?.scrollIntoView({behavior:'smooth',block:'start'}));}));
@@ -396,17 +482,13 @@ async function render():Promise<void> {
   root.setAttribute('dir','rtl');
   root.innerHTML=`
   <div class="commerce-section-nav" role="tablist" aria-label="بخش‌های عملیات بازرگانی">
-    <button type="button" class="btn btn-primary" id="openInvoiceTypeSheet">فاکتور جدید</button>
-    <button type="button" class="btn ${activeCommerceSection==='sale'?'btn-primary':'btn-secondary'}" data-commerce-tab="sale" role="tab" aria-selected="${activeCommerceSection==='sale'}">فاکتور فروش</button>
-    <button type="button" class="btn ${activeCommerceSection==='purchase'?'btn-primary':'btn-secondary'}" data-commerce-tab="purchase" role="tab" aria-selected="${activeCommerceSection==='purchase'}">فاکتور خرید</button>
-    <button type="button" class="btn ${activeCommerceSection==='receipts'?'btn-primary':'btn-secondary'}" data-commerce-tab="receipts" role="tab" aria-selected="${activeCommerceSection==='receipts'}">دریافت / پرداخت</button>
-    <button type="button" class="btn ${activeCommerceSection==='cheques'?'btn-primary':'btn-secondary'}" data-commerce-tab="cheques" role="tab" aria-selected="${activeCommerceSection==='cheques'}">چک‌ها</button>
-    <button type="button" class="btn ${activeCommerceSection==='aging'?'btn-primary':'btn-secondary'}" data-commerce-tab="aging" role="tab" aria-selected="${activeCommerceSection==='aging'}">مانده اشخاص</button>
-    <button type="button" class="btn ${activeCommerceSection==='banking'?'btn-primary':'btn-secondary'}" data-commerce-tab="banking" role="tab" aria-selected="${activeCommerceSection==='banking'}">بانک</button>
-    <button type="button" class="btn ${activeCommerceSection==='management'?'btn-primary':'btn-secondary'}" data-commerce-tab="management" role="tab" aria-selected="${activeCommerceSection==='management'}">سودآوری</button>
-    <button type="button" class="btn ${activeCommerceSection==='inventory'?'btn-primary':'btn-secondary'}" data-commerce-tab="inventory" role="tab" aria-selected="${activeCommerceSection==='inventory'}">انبار</button>
+    <button type="button" class="btn btn-primary" id="openInvoiceTypeSheet">فاکتور</button>
+    <button type="button" class="btn btn-secondary" data-commerce-tab="receipts">دریافت / پرداخت</button>
+    <button type="button" class="btn btn-secondary" data-commerce-tab="banking">بانک</button>
+    <button type="button" class="btn btn-secondary" data-commerce-tab="management">سودآوری</button>
+    <button type="button" class="btn btn-secondary" data-commerce-tab="inventory">انبار</button>
   </div>
-  <section data-commerce-section="invoices" ${activeCommerceSection==='sale'||activeCommerceSection==='purchase'?'':'hidden'}>
+  <section data-commerce-section="invoices">
   <header class="commerce-page-header"><div><h2>${invoiceTypeTitle(activeInvoiceType)}</h2></div><span class="commerce-page-chip">${activeCommerceSection==='sale'?'فروش':'خرید'}</span></header>
   <div class="card commerce-invoice-card" style="margin-top:12px">
 <h3 id="invoiceFormTitle">${invoiceTypeTitle(activeInvoiceType)}</h3>
@@ -470,7 +552,26 @@ async function render():Promise<void> {
     ${activeCommerceSection==='inventory'?await inventoryReconciliationPanel():''}
   </section>
   <section data-commerce-section="receipts" ${activeCommerceSection==='receipts'?'':'hidden'}>
-  <div class="card" style="margin-top:12px"><h3>ثبت دریافت و پرداخت</h3><p class="hint">در این بخش فقط عملیات ثبت و فهرست رسیدها انجام می‌شود. مدیریت چک، گزارش مانده اشخاص و عملیات بانکی در زبانه‌های جداگانه قرار دارند.</p><div class="form-grid"><label class="field">نوع عملیات<select id="cashType"><option value="receipt">دریافت از مشتری</option><option value="payment">پرداخت به تأمین‌کننده</option></select></label><label class="field">شماره رسید/پرداخت<input id="cashNumber"></label><label class="field">طرف حساب<select id="cashParty"><option value="">انتخاب طرف حساب</option>${partyOptions('customer')}</select></label><label class="field">روش تسویه<select id="cashMethod"><option value="cash">نقدی</option><option value="bank">بانکی</option><option value="card">کارت‌خوان</option><option value="transfer">حواله</option><option value="cheque">چک</option></select></label><label class="field">حساب صندوق / بانک مقصد یا مبدأ<select id="cashAccount"><option value="">انتخاب حساب</option>${accountOptions()}</select></label><label class="field">فاکتور برای تخصیص<select id="cashInvoice"><option value="">بدون تخصیص (علی‌الحساب)</option></select></label><label class="field">مبلغ تخصیص به فاکتور (${currency==='toman'?'تومان':'ریال'})<input id="cashAllocation" inputmode="decimal" placeholder="اختیاری"></label><label class="field">سال مالی<select id="cashPeriod"><option value="">انتخاب سال مالی</option>${periodOptions()}</select></label><label class="field">تاریخ شمسی<input id="cashDate" placeholder="۱۴۰۵/۰۱/۰۱"></label><label class="field">مبلغ (${currency==='toman'?'تومان':'ریال'})<input id="cashAmount" inputmode="decimal"></label><label class="field">شرح<input id="cashDescription"></label><label class="field" data-cheque-field hidden>شماره چک<input id="cashChequeNumber"></label><label class="field" data-cheque-field hidden>بانک چک<input id="cashChequeBank"></label><label class="field" data-cheque-field hidden>تاریخ سررسید چک<input id="cashChequeDue" placeholder="۱۴۰۵/۰۱/۳۰"></label></div><button class="btn btn-primary" id="cashSave">ثبت دریافت / پرداخت و سند حسابداری</button><div class="table-wrap"><table class="data-table"><thead><tr><th>شماره</th><th>نوع / روش</th><th>طرف حساب</th><th>تاریخ</th><th>مبلغ</th><th>وضعیت / چک</th><th>عملیات</th></tr></thead><tbody>${cashRows()}</tbody></table></div></div>
+  <div class="card cash-entry-card" dir="rtl" style="margin-top:12px;text-align:right">
+<h3>دریافت / پرداخت</h3>
+<div class="form-grid cash-entry-grid">
+<label class="field">نوع<select id="cashType"><option value="receipt">دریافت</option><option value="payment">پرداخت</option></select></label>
+<label class="field">شماره<input id="cashNumber" placeholder="خودکار یا دستی"></label>
+<label class="field">طرف حساب<select id="cashParty"><option value="">انتخاب</option>${partyOptions('customer')}</select></label>
+<label class="field">روش<select id="cashMethod"><option value="cash">نقدی</option><option value="bank">بانک</option><option value="card">کارت</option><option value="transfer">حواله</option><option value="cheque">چک</option></select></label>
+<label class="field">حساب<select id="cashAccount"><option value="">صندوق / بانک</option>${accountOptions()}</select></label>
+<label class="field">فاکتور<select id="cashInvoice"><option value="">بدون تخصیص</option></select></label>
+<label class="field">تاریخ<input id="cashDate" placeholder="۱۴۰۵/۰۱/۰۱"></label>
+<label class="field">مبلغ<input id="cashAmount" inputmode="decimal" placeholder="۰"></label>
+<input type="hidden" id="cashAllocation" value="">
+<input type="hidden" id="cashDescription" value="">
+<label class="field" data-cheque-field hidden>شماره چک<input id="cashChequeNumber"></label>
+<label class="field" data-cheque-field hidden>بانک<input id="cashChequeBank"></label>
+<label class="field" data-cheque-field hidden>سررسید چک<input id="cashChequeDue" placeholder="۱۴۰۵/۰۱/۳۰"></label>
+</div>
+<button class="btn btn-primary" id="cashSave" type="button">ثبت</button>
+<div class="table-wrap" style="margin-top:14px"><table class="data-table"><thead><tr><th>شماره</th><th>نوع</th><th>طرف</th><th>تاریخ</th><th>مبلغ</th><th>وضعیت</th><th></th></tr></thead><tbody>${cashRows()}</tbody></table></div>
+</div>
   </section>
   <section data-commerce-section="cheques" ${activeCommerceSection==='cheques'?'':'hidden'}>${activeCommerceSection==='cheques'?await chequePanel():''}</section>
   <section data-commerce-section="aging" ${activeCommerceSection==='aging'?'':'hidden'}>${activeCommerceSection==='aging'?await agingPanel():''}</section>
@@ -478,9 +579,15 @@ async function render():Promise<void> {
   const itemPlaceholder=root.querySelector<HTMLElement>('#invoiceItemsPlaceholder');
   if(itemPlaceholder){['.commerce-lines-head','.invoice-product-tools','#commerceInvoiceLines','#invoiceAddLine'].forEach(sel=>{const node=root.querySelector<HTMLElement>(sel);if(node)itemPlaceholder.appendChild(node);});}
   root.querySelectorAll<HTMLButtonElement>('[data-commerce-tab]').forEach(button=>button.addEventListener('click',()=>{
-    const next=button.dataset.commerceTab as 'sale'|'purchase'|'receipts'|'cheques'|'aging'|'banking'|'management'|'inventory'; if(next==='sale'||next==='purchase')activeInvoiceType=next;
-    if(next===activeCommerceSection)return;
-    activeCommerceSection=next;editingInvoiceId=null;render();
+    const next=button.dataset.commerceTab as 'sale'|'purchase'|'receipts'|'banking'|'management'|'inventory';
+    if(next==='sale'||next==='purchase'){
+      activeInvoiceType=next;
+      activeCommerceSection=next;
+      editingInvoiceId=null;
+      render();
+      return;
+    }
+    openCommercePanelSheet(next);
   }));
   addInvoiceLine(); addInvoicePaymentRow(); bind();
 }
@@ -532,7 +639,7 @@ function bind():void {
   el<HTMLButtonElement>('#profitabilityClearFilter')?.addEventListener('click',()=>{profitabilityFilter={};render()});
   el<HTMLButtonElement>('#profitabilityExportXlsx')?.addEventListener('click',async()=>{try{await exportProfitabilityXlsx(profitabilityFilter);toast('فایل Excel گزارش سودآوری آماده شد','success')}catch(e){toast(e instanceof Error?e.message:'ساخت فایل Excel ناموفق بود','error')}});
   el<HTMLButtonElement>('#profitabilityPrintPdf')?.addEventListener('click',async()=>{try{await printProfitabilityPdf(profitabilityFilter)}catch(e){toast(e instanceof Error?e.message:'آماده‌سازی PDF ناموفق بود','error')}});
-  el<HTMLButtonElement>('#bankTransferSave')?.addEventListener('click',async()=>{try{await createInternalTransfer({number:el<HTMLInputElement>('#bankTransferNo')!.value,date:digits(el<HTMLInputElement>('#bankTransferDate')!.value),fiscalPeriodId:el<HTMLSelectElement>('#bankTransferPeriod')!.value,fromAccountId:el<HTMLSelectElement>('#bankTransferFrom')!.value,toAccountId:el<HTMLSelectElement>('#bankTransferTo')!.value,amountRial:parseMoneyToRial(digits(el<HTMLInputElement>('#bankTransferAmount')!.value),currency),feeRial:parseMoneyToRial(digits(el<HTMLInputElement>('#bankTransferFee')!.value||'0'),currency),feeAccountId:el<HTMLSelectElement>('#bankTransferFeeAccount')!.value,description:el<HTMLInputElement>('#bankTransferDescription')!.value});await render();refreshAccounting();toast('انتقال بین حساب‌ها و سند حسابداری ثبت شد','success')}catch(e){toast(e instanceof Error?e.message:'خطا در ثبت انتقال','error')}});
+  el<HTMLButtonElement>('#bankTransferSave')?.addEventListener('click',async()=>{try{await createInternalTransfer({number:el<HTMLInputElement>('#bankTransferNo')!.value,date:digits(el<HTMLInputElement>('#bankTransferDate')!.value),fiscalPeriodId:await activeFiscalPeriodId(),fromAccountId:el<HTMLSelectElement>('#bankTransferFrom')!.value,toAccountId:el<HTMLSelectElement>('#bankTransferTo')!.value,amountRial:parseMoneyToRial(digits(el<HTMLInputElement>('#bankTransferAmount')!.value),currency),feeRial:parseMoneyToRial(digits(el<HTMLInputElement>('#bankTransferFee')!.value||'0'),currency),feeAccountId:el<HTMLSelectElement>('#bankTransferFeeAccount')!.value,description:el<HTMLInputElement>('#bankTransferDescription')!.value});await render();refreshAccounting();toast('انتقال بین حساب‌ها و سند حسابداری ثبت شد','success')}catch(e){toast(e instanceof Error?e.message:'خطا در ثبت انتقال','error')}});
   el<HTMLButtonElement>('#bankStatementImport')?.addEventListener('click',async()=>{try{const file=el<HTMLInputElement>('#bankStatementFile')?.files?.[0];if(!file)throw new Error('ابتدا فایل CSV را انتخاب کنید.');const accountId=el<HTMLSelectElement>('#bankStatementAccount')!.value;const rows=parseBankStatementCsv(await file.text(),accountId);const result=await importBankStatement(rows);await render();toast(`${result.imported} ردیف وارد شد؛ ${result.matched} ردیف به‌صورت خودکار تطبیق یافت.`,'success')}catch(e){toast(e instanceof Error?e.message:'خطا در ورود صورت‌حساب','error')}});
 
   el<HTMLButtonElement>('#openingCostSave')?.addEventListener('click',async()=>{try{const p=products.find(x=>x.id===el<HTMLSelectElement>('#openingCostProduct')!.value);if(!p)throw new Error('کالا را انتخاب کنید.');const qty=Number(digits(el<HTMLInputElement>('#openingCostQty')!.value).replace(',','.'));if(!Number.isFinite(qty)||qty<=0)throw new Error('تعداد موجودی معتبر نیست.');if(Math.abs(qty-(Number(p.systemQty)||0))>0.000001)throw new Error('تعداد باید با موجودی فعلی کالا در انبار برابر باشد.');const warehouse=p.warehouse||'انبار اصلی';const costing=await loadInventoryCostData();setOpeningStockCost(costing,{productId:p.id,warehouse,qtyMilli:Math.round(qty*1000),unitCostRial:parseMoneyToRial(digits(el<HTMLInputElement>('#openingCostUnit')!.value),currency),date:digits(el<HTMLInputElement>('#openingCostDate')!.value)});await saveInventoryCostData(costing);logAudit('accounting_opening_stock_valued',{productId:p.id,warehouse,qty,unitCostRial:parseMoneyToRial(digits(el<HTMLInputElement>('#openingCostUnit')!.value),currency)});toast('بهای موجودی اولیه ثبت شد','success')}catch(e){toast(e instanceof Error?e.message:'خطا در ارزش‌گذاری موجودی','error')}});
@@ -691,7 +798,7 @@ function bind():void {
   el<HTMLSelectElement>('#cashType')?.addEventListener('change',()=>{const type=el<HTMLSelectElement>('#cashType')!.value;el<HTMLSelectElement>('#cashParty')!.innerHTML='<option value="">انتخاب طرف حساب</option>'+partyOptions(type==='receipt'?'customer':'supplier');refreshCashInvoices()});
   el<HTMLSelectElement>('#cashParty')?.addEventListener('change',refreshCashInvoices);
   el<HTMLSelectElement>('#cashMethod')?.addEventListener('change',()=>{const show=el<HTMLSelectElement>('#cashMethod')!.value==='cheque';document.querySelectorAll<HTMLElement>('[data-cheque-field]').forEach(x=>x.hidden=!show)});
-  el<HTMLButtonElement>('#cashSave')?.addEventListener('click',async()=>{if(!commerce)return;try{const type=el<HTMLSelectElement>('#cashType')!.value as 'receipt'|'payment';const result=await createCashTransaction({type,number:el<HTMLInputElement>('#cashNumber')!.value,date:digits(el<HTMLInputElement>('#cashDate')!.value),fiscalPeriodId:el<HTMLSelectElement>('#cashPeriod')!.value,partyId:el<HTMLSelectElement>('#cashParty')!.value,cashAccountId:el<HTMLSelectElement>('#cashAccount')!.value,amountRial:parseMoneyToRial(digits(el<HTMLInputElement>('#cashAmount')!.value),currency),description:el<HTMLInputElement>('#cashDescription')!.value,method:el<HTMLSelectElement>('#cashMethod')!.value as any,allocations:el<HTMLSelectElement>('#cashInvoice')!.value?[{invoiceId:el<HTMLSelectElement>('#cashInvoice')!.value,amountRial:parseMoneyToRial(digits(el<HTMLInputElement>('#cashAllocation')!.value||el<HTMLInputElement>('#cashAmount')!.value),currency)}]:[],chequeNumber:el<HTMLInputElement>('#cashChequeNumber')!.value,chequeBank:el<HTMLInputElement>('#cashChequeBank')!.value,chequeDueDate:digits(el<HTMLInputElement>('#cashChequeDue')!.value)},commerce);commerce=result.commerce;await saveCommerceData(commerce);render();refreshAccounting();toast('دریافت/پرداخت و سند حسابداری ثبت شد','success')}catch(e){toast(e instanceof Error?e.message:'خطا در ثبت دریافت/پرداخت','error')}});
+  el<HTMLButtonElement>('#cashSave')?.addEventListener('click',async()=>{if(!commerce)return;try{const type=el<HTMLSelectElement>('#cashType')!.value as 'receipt'|'payment';const result=await createCashTransaction({type,number:el<HTMLInputElement>('#cashNumber')!.value,date:digits(el<HTMLInputElement>('#cashDate')!.value),fiscalPeriodId:await activeFiscalPeriodId(),partyId:el<HTMLSelectElement>('#cashParty')!.value,cashAccountId:el<HTMLSelectElement>('#cashAccount')!.value,amountRial:parseMoneyToRial(digits(el<HTMLInputElement>('#cashAmount')!.value),currency),description:el<HTMLInputElement>('#cashDescription')!.value,method:el<HTMLSelectElement>('#cashMethod')!.value as any,allocations:el<HTMLSelectElement>('#cashInvoice')!.value?[{invoiceId:el<HTMLSelectElement>('#cashInvoice')!.value,amountRial:parseMoneyToRial(digits(el<HTMLInputElement>('#cashAllocation')!.value||el<HTMLInputElement>('#cashAmount')!.value),currency)}]:[],chequeNumber:el<HTMLInputElement>('#cashChequeNumber')!.value,chequeBank:el<HTMLInputElement>('#cashChequeBank')!.value,chequeDueDate:digits(el<HTMLInputElement>('#cashChequeDue')!.value)},commerce);commerce=result.commerce;await saveCommerceData(commerce);render();refreshAccounting();toast('دریافت/پرداخت و سند حسابداری ثبت شد','success')}catch(e){toast(e instanceof Error?e.message:'خطا در ثبت دریافت/پرداخت','error')}});
   document.querySelectorAll<HTMLElement>('[data-cheque-clear]').forEach(b=>b.addEventListener('click',async()=>{if(!commerce)return;try{const date=prompt('تاریخ وصول/تسویه شمسی را وارد کنید (مثلاً ۱۴۰۵/۰۱/۳۰):');if(!date)return;const result=await updateChequeStatus(b.dataset.chequeClear!,'cleared',digits(date),commerce);commerce=result.commerce;await recordChequeEvent(b.dataset.chequeClear!,'cleared_note',digits(date),'وصول/تسویه با سند حسابداری');render();refreshAccounting();toast('وصول/تسویه چک ثبت شد','success')}catch(e){toast(e instanceof Error?e.message:'خطا در تسویه چک','error')}}));
   document.querySelectorAll<HTMLElement>('[data-cheque-bounce]').forEach(b=>b.addEventListener('click',async()=>{if(!commerce)return;try{const date=prompt('تاریخ برگشت چک شمسی را وارد کنید:');if(!date)return;const result=await updateChequeStatus(b.dataset.chequeBounce!,'bounced',digits(date),commerce);commerce=result.commerce;const reason=prompt('علت برگشت چک:')||'علت اعلام نشده';await recordChequeEvent(b.dataset.chequeBounce!,'bounced_note',digits(date),reason);render();refreshAccounting();toast('برگشت چک و اثر حسابداری ثبت شد','success')}catch(e){toast(e instanceof Error?e.message:'خطا در ثبت برگشت چک','error')}}));
 
