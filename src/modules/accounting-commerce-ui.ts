@@ -1131,14 +1131,17 @@ async function openCommercePanelSheet(section:CommercePanelSection):Promise<void
   const close=()=>{
     document.getElementById('invoiceItemsSheet')?.remove();
     document.getElementById('partyFormSheet')?.remove();
+    document.getElementById('invoiceTypeSheet')?.remove();
     // بازگرداندن گره‌ها تا render بعدی تمیز باشد
     while(mount.firstChild) sectionEl.appendChild(mount.firstChild);
     overlay.remove();
     if(!document.getElementById('accountingModuleSheet')){
       document.body.classList.remove('accounting-sheet-open');
     }
+    editingInvoiceId=null;
     activeCommerceSection='home';
-    render();
+    suppressCommerceSheetReopen=true;
+    void render().finally(()=>{suppressCommerceSheetReopen=false;});
   };
   overlay.querySelector('#commercePanelClose')?.addEventListener('click',close);
   // تقویم و جستجوی کالا پس از انتقال به برگه
@@ -1764,8 +1767,20 @@ function bind():void {
   document.querySelectorAll<HTMLElement>('[data-chq-deposit]').forEach(b=>b.addEventListener('click',async()=>{try{const date=prompt('تاریخ واگذاری به بانک شمسی:');if(!date)return;const note=prompt('نام شعبه/شماره رسید واگذاری:')||'';await recordChequeEvent(b.dataset.chqDeposit!,'deposited',digits(date),note);await render();toast('واگذاری چک به بانک در دفتر ثبت شد.','success')}catch(e){toast(e instanceof Error?e.message:'خطا در ثبت واگذاری','error')}}));
 
 }
+/** بستن همه برگه‌های تو در توی بازرگانی و برگشت به خانه تا دفعه بعد انتخاب نوع فاکتور دوباره دیده شود */
+export async function resetCommerceNavigation():Promise<void>{
+  document.getElementById('invoiceItemsSheet')?.remove();
+  document.getElementById('partyFormSheet')?.remove();
+  document.getElementById('invoiceTypeSheet')?.remove();
+  document.getElementById('commercePanelSheet')?.remove();
+  editingInvoiceId=null;
+  activeCommerceSection='home';
+  suppressCommerceSheetReopen=true;
+  try{await render();}finally{suppressCommerceSheetReopen=false;}
+}
+
 export async function initAccountingCommerceUI():Promise<void>{
-  try{await ensureCommerceAccounts();const [acc,stored]=await Promise.all([loadAccountingData(),loadCommerceData()]);commerce=stored;currency=acc.settings.currencyDisplay;fiscalPeriodsCache=acc.fiscalPeriods.map(p=>({id:p.id,startDate:p.startDate,endDate:p.endDate,status:p.status}));loadPeriodOptions=acc.fiscalPeriods.filter(p=>p.status==='open').map(p=>`<option value="${esc(p.id)}">${esc(p.title)}</option>`).join('');accountOptionsCache=acc.accounts.filter(a=>a.isActive&&a.level==='detail'&&['det-cash','det-bank'].includes(a.id)).map(a=>`<option value="${esc(a.id)}">${esc(a.code)} — ${esc(a.title)}</option>`).join('');render();}
+  try{await ensureCommerceAccounts();const [acc,stored]=await Promise.all([loadAccountingData(),loadCommerceData()]);commerce=stored;currency=acc.settings.currencyDisplay;fiscalPeriodsCache=acc.fiscalPeriods.map(p=>({id:p.id,startDate:p.startDate,endDate:p.endDate,status:p.status}));loadPeriodOptions=acc.fiscalPeriods.filter(p=>p.status==='open').map(p=>`<option value="${esc(p.id)}">${esc(p.title)}</option>`).join('');accountOptionsCache=acc.accounts.filter(a=>a.isActive&&a.level==='detail'&&['det-cash','det-bank'].includes(a.id)).map(a=>`<option value="${esc(a.id)}">${esc(a.code)} — ${esc(a.title)}</option>`).join('');activeCommerceSection='home';suppressCommerceSheetReopen=false;render();}
   catch(e){console.error('[Anbarin] commerce UI init failed',e);toast('بارگذاری فاکتورها و دریافت‌وپرداخت انجام نشد','error')}
 }
 

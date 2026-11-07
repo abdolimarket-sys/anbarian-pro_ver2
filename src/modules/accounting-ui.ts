@@ -12,6 +12,7 @@ import { downloadFile, dateStr } from '@/utils/helpers';
 import { toast } from './ui';
 import { enhanceDateFields } from './date-picker';
 import { ensureReportsUIReady } from './accounting-reports';
+import { resetCommerceNavigation } from './accounting-commerce-ui';
 
 let data: AccountingData | null = null;
 let activeAccountingTab: string | null = null;
@@ -48,6 +49,12 @@ function restoreAccountingHosts(): void {
 }
 
 function closeAccountingModuleSheet(): void {
+  // برگه‌های تو در توی بازرگانی و وضعیت «فاکتور فروش» را پاک کن تا دفعه بعد انتخاب نوع بیاید
+  document.getElementById('invoiceItemsSheet')?.remove();
+  document.getElementById('partyFormSheet')?.remove();
+  document.getElementById('invoiceTypeSheet')?.remove();
+  document.getElementById('commercePanelSheet')?.remove();
+  void resetCommerceNavigation();
   restoreAccountingHosts();
   document.getElementById('accountingModuleSheet')?.remove();
   activeAccountingTab = null;
