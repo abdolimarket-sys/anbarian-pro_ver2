@@ -184,6 +184,42 @@ const esc=(s:string)=>s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;
 let acc:AccountingData|null=null, commerce:CommerceData|null=null, costing:InventoryCostData|null=null;
 const el=<T extends HTMLElement>(q:string)=>document.querySelector<T>(q);
 function range():DateRange{return {from:digits(el<HTMLInputElement>('#arFrom')?.value||'')||undefined,to:digits(el<HTMLInputElement>('#arTo')?.value||'')||undefined,fiscalPeriodId:el<HTMLSelectElement>('#arPeriod')?.value||undefined};}
+function selectedPartyId():string{return el<HTMLSelectElement>('#arParty')?.value||'';}
+function selectedProductId():string{return el<HTMLSelectElement>('#arProduct')?.value||'';}
+function partyOptionsHtml(kind:'customer'|'supplier'|'all'='all'):string{
+  if(!commerce)return '';
+  const list=(commerce.parties||[]).filter(p=>{
+    if(!p.isActive)return false;
+    if(kind==='customer')return p.type==='customer'||p.type==='both';
+    if(kind==='supplier')return p.type==='supplier'||p.type==='both';
+    return true;
+  }).slice().sort((a,b)=>a.name.localeCompare(b.name,'fa'));
+  return list.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('');
+}
+function productOptionsHtml():string{
+  return products.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||'','fa'))
+    .map(p=>`<option value="${esc(p.id)}">${esc(p.name||p.id)}${p.code?` (${esc(p.code)})`:''}</option>`).join('');
+}
+type ReportFilterSpec = { party?: 'customer'|'supplier'|'all'; product?: boolean; account?: boolean };
+function filtersForReport(reportId:string):ReportFilterSpec{
+  switch(reportId){
+    case 'ledger': return {account:true};
+    case 'sale_detail': return {party:'customer', product:true};
+    case 'purchase_detail': return {party:'supplier', product:true};
+    case 'sale_by_party': return {party:'customer'};
+    case 'purchase_by_party': return {party:'supplier'};
+    case 'product_sales': return {product:true, party:'customer'};
+    case 'returns': return {party:'all', product:true};
+    case 'party': return {party:'all'};
+    case 'receivables': return {party:'customer'};
+    case 'payables': return {party:'supplier'};
+    case 'aging': return {party:'all'};
+    case 'cash': return {party:'all'};
+    case 'inventory': return {product:true};
+    default: return {};
+  }
+}
+
 function table(headers:string[], rows:string[][]):string{return `<div class="table-wrap"><table class="data-table"><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')||`<tr><td colspan="${headers.length}">داده‌ای برای این گزارش وجود ندارد.</td></tr>`}</tbody></table></div>`;}
 function invTypeLabel(t:string):string{
   return t==='sale'?'فروش':t==='purchase'?'خرید':t==='return-sale'?'برگشت از فروش':t==='return-purchase'?'برگشت از خرید':t==='proforma'?'پیش‌فاکتور':t;
@@ -217,7 +253,17 @@ function agingBucket(due:string, asOf:string):string{
   return 'بیش از ۹۰ روز';
 }
 function renderReport():void{
-  if(!acc||!commerce||!costing)return; const type=el<HTMLSelectElement>('#arType')?.value||'trial'; const r=range(); const host=el<HTMLDivElement>('#arResult');if(!host)return;
+  const host=el<HTMLDivElement>('#arResult');
+  if(!host){
+    console.warn('[Anbarin] arResult missing');
+    return;
+  }
+  if(!acc||!commerce||!costing){
+    host.innerHTML='<p class="hint">داده‌های حسابداری هنوز بارگذاری نشده است. یک‌بار دیگر از منوی گزارش‌ها وارد شوید.</p>';
+    return;
+  }
+  const type=(activeReportId||el<HTMLInputElement>('#arType')?.value||'trial') as string;
+  const r=range();
   try{
     if(type==='trial'){
       const rows=buildTrialBalance(acc,r);const total=sumLines(rows);
@@ -269,18 +315,25 @@ function renderReport():void{
     }
     else if(type==='ledger'){
       const accountId=el<HTMLSelectElement>('#arAccount')?.value||'';
-      const rows=accountId?buildGeneralLedger(acc,accountId,r):[];
-      host.innerHTML=table(['تاریخ','شماره سند','شرح','بدهکار','بستانکار','مانده'],
-        rows.map(x=>[esc(x.date),esc(x.entryNumber),esc(x.description),money(x.debitRial),money(x.creditRial),money(x.balanceRial)]));
+      if(!accountId){
+        host.innerHTML='<p class="hint">برای دفتر معین، ابتدا یک حساب را از فهرست انتخاب کنید، سپس «تهیه گزارش» را بزنید.</p>';
+      }else{
+        const rows=buildGeneralLedger(acc,accountId,r);
+        host.innerHTML=table(['تاریخ','شماره سند','شرح','بدهکار','بستانکار','مانده'],
+          rows.map(x=>[esc(x.date),esc(x.entryNumber),esc(x.description),money(x.debitRial),money(x.creditRial),money(x.balanceRial)]));
+      }
     }
     else if(type==='party'){
-      const rows=buildPartyLedger(commerce,acc,r);
+      const partyFilter=selectedPartyId();
+      let rows=buildPartyLedger(commerce,acc,r);
+      if(partyFilter)rows=rows.filter(x=>x.partyId===partyFilter);
       host.innerHTML=table(['طرف حساب','بدهکار','بستانکار','مانده'],
         rows.map(x=>[esc(x.partyName),money(x.debitRial),money(x.creditRial),money(x.balanceRial)]));
     }
     else if(type==='receivables'||type==='payables'){
       const kind=type==='receivables'?'receivable':'payable';
-      const open=openInvoicesFor(kind);
+      const partyFilter=selectedPartyId();
+      const open=openInvoicesFor(kind).filter(x=>!partyFilter||x.invoice.partyId===partyFilter);
       const byParty=new Map<string,{name:string;count:number;amount:number}>();
       for(const row of open){
         const id=row.invoice.partyId;
@@ -296,7 +349,9 @@ function renderReport():void{
     }
     else if(type==='aging'){
       const asOf=r.to||r.from||'9999/12/29';
-      const all=[...openInvoicesFor('receivable').map(x=>({...x,kind:'مطالبات'})),...openInvoicesFor('payable').map(x=>({...x,kind:'بدهی'}))];
+      const partyFilter=selectedPartyId();
+      const all=[...openInvoicesFor('receivable').map(x=>({...x,kind:'مطالبات'})),...openInvoicesFor('payable').map(x=>({...x,kind:'بدهی'}))]
+        .filter(x=>!partyFilter||x.invoice.partyId===partyFilter);
       const buckets=new Map<string,number>();
       const rows=all.map(x=>{
         const due=x.invoice.dueDate||x.invoice.date;
@@ -333,9 +388,11 @@ function renderReport():void{
     }
     else if(type==='sale_by_party'||type==='purchase_by_party'){
       const isSale=type==='sale_by_party';
+      const partyFilter=selectedPartyId();
       const map=new Map<string,{name:string;count:number;net:number;tax:number;gross:number}>();
       for(const i of commerce.invoices||[]){
         if(i.status!=='posted'||(r.fiscalPeriodId&&i.fiscalPeriodId!==r.fiscalPeriodId)||!inRange(i.date,r))continue;
+        if(partyFilter&&i.partyId!==partyFilter)continue;
         const match=isSale?(i.type==='sale'||i.type==='return-sale'):(i.type==='purchase'||i.type==='return-purchase');
         if(!match)continue;
         const sign=i.type.startsWith('return')?-1:1;
@@ -351,11 +408,15 @@ function renderReport():void{
           .concat([['جمع',fa(tot.count),money(tot.net),money(tot.tax),money(tot.gross)]]));
     }
     else if(type==='product_sales'){
+      const productFilter=selectedProductId();
+      const partyFilter=selectedPartyId();
       const map=new Map<string,{name:string;qty:number;amount:number;discount:number}>();
       for(const i of commerce.invoices||[]){
         if(i.status!=='posted'||(i.type!=='sale'&&i.type!=='return-sale')||(r.fiscalPeriodId&&i.fiscalPeriodId!==r.fiscalPeriodId)||!inRange(i.date,r))continue;
+        if(partyFilter&&i.partyId!==partyFilter)continue;
         const sign=i.type==='return-sale'?-1:1;
         for(const line of i.lines||[]){
+          if(productFilter&&line.productId!==productFilter)continue;
           const key=line.productId||line.description||'—';
           const name=line.productId?(products.find(p=>p.id===line.productId)?.name||line.description):line.description;
           const cur=map.get(key)||{name:name||'—',qty:0,amount:0,discount:0};
@@ -370,7 +431,16 @@ function renderReport():void{
         rows.map(x=>[esc(x.name),fa(x.qty),money(x.amount),money(x.discount),money(x.amount-x.discount)]));
     }
     else if(type==='returns'){
-      const invs=(commerce.invoices||[]).filter(i=>i.status==='posted'&&(i.type==='return-sale'||i.type==='return-purchase')&&(!r.fiscalPeriodId||i.fiscalPeriodId===r.fiscalPeriodId)&&inRange(i.date,r));
+      const partyFilter=selectedPartyId();
+      const productFilter=selectedProductId();
+      const invs=(commerce.invoices||[]).filter(i=>{
+        if(i.status!=='posted'||(i.type!=='return-sale'&&i.type!=='return-purchase'))return false;
+        if(r.fiscalPeriodId&&i.fiscalPeriodId!==r.fiscalPeriodId)return false;
+        if(!inRange(i.date,r))return false;
+        if(partyFilter&&i.partyId!==partyFilter)return false;
+        if(productFilter&&!(i.lines||[]).some(l=>l.productId===productFilter))return false;
+        return true;
+      });
       host.innerHTML=table(['تاریخ','شماره','نوع','طرف حساب','خالص','مالیات','مبلغ نهایی'],
         invs.map(i=>{
           const p=commerce!.parties.find(x=>x.id===i.partyId);
@@ -388,12 +458,15 @@ function renderReport():void{
     }
     else if(type==='purchase_detail'||type==='sale_detail'){
       const isSale=type==='sale_detail';
-      const invs=(commerce.invoices||[]).filter(i=>i.status==='posted'&&(isSale?i.type==='sale'||i.type==='return-sale':i.type==='purchase'||i.type==='return-purchase')&&(!r.fiscalPeriodId||i.fiscalPeriodId===r.fiscalPeriodId)&&inRange(i.date,r)).slice().reverse();
+      const partyFilter=selectedPartyId();
+      const productFilter=selectedProductId();
+      const invs=(commerce.invoices||[]).filter(i=>i.status==='posted'&&(isSale?i.type==='sale'||i.type==='return-sale':i.type==='purchase'||i.type==='return-purchase')&&(!r.fiscalPeriodId||i.fiscalPeriodId===r.fiscalPeriodId)&&inRange(i.date,r)&&(!partyFilter||i.partyId===partyFilter)).slice().reverse();
       const rows:string[][]=[];
       let total=0;
       for(const inv of invs){
         const p=commerce.parties.find(x=>x.id===inv.partyId);
         for(const line of inv.lines||[]){
+          if(productFilter&&line.productId!==productFilter)continue;
           const qty=(line.quantityMilli||0)/1000;
           const lineTotal=(line.unitPriceRial||0)*qty-(line.discountRial||0);
           total+=lineTotal;
@@ -499,13 +572,22 @@ function renderReport():void{
         +table(['طرف حساب (بیشترین مانده)','مانده'],topParties.map(x=>[esc(x.partyName),money(x.balanceRial)]));
     }
     else if(type==='cash'){
+      const partyFilter=selectedPartyId();
       const x=buildCashReport(commerce,r);
-      host.innerHTML=table(['شرح','مبلغ'],[['دریافت‌ها',money(x.receiptsRial)],['پرداخت‌ها',money(x.paymentsRial)],['خالص جریان نقدی',money(x.netCashRial)]])
-        +table(['تاریخ','شماره','نوع','طرف حساب','مبلغ'],x.transactions.map(t=>[esc(t.date),esc(t.number),t.type==='receipt'?'دریافت':'پرداخت',esc(commerce!.parties.find(p=>p.id===t.partyId)?.name||'—'),money(t.amountRial)]));
+      const txs=x.transactions.filter(t=>!partyFilter||t.partyId===partyFilter);
+      const receipts=txs.filter(t=>t.type==='receipt').reduce((s,t)=>s+t.amountRial,0);
+      const payments=txs.filter(t=>t.type==='payment').reduce((s,t)=>s+t.amountRial,0);
+      host.innerHTML=table(['شرح','مبلغ'],[['دریافت‌ها',money(receipts)],['پرداخت‌ها',money(payments)],['خالص جریان نقدی',money(receipts-payments)]])
+        +table(['تاریخ','شماره','نوع','طرف حساب','مبلغ'],txs.map(t=>[esc(t.date),esc(t.number),t.type==='receipt'?'دریافت':'پرداخت',esc(commerce!.parties.find(p=>p.id===t.partyId)?.name||'—'),money(t.amountRial)]));
+    }
+    else if(type==='inventory'){
+      const productFilter=selectedProductId();
+      let rows=buildInventoryValuation(costing);
+      if(productFilter)rows=rows.filter(x=>x.productId===productFilter);
+      host.innerHTML=table(['کالا','انبار','موجودی','ارزش ریالی','بهای متوسط واحد'],rows.map(x=>[esc(x.productName),esc(x.warehouse),fa(x.quantityMilli/1000),money(x.valueRial),money(x.averageUnitCostRial)]));
     }
     else {
-      const rows=buildInventoryValuation(costing);
-      host.innerHTML=table(['کالا','انبار','موجودی','ارزش ریالی','بهای متوسط واحد'],rows.map(x=>[esc(x.productName),esc(x.warehouse),fa(x.quantityMilli/1000),money(x.valueRial),money(x.averageUnitCostRial)]));
+      host.innerHTML=`<p class="hint">گزارش «${esc(type)}» در این نسخه تعریف نشده است.</p>`;
     }
   }catch(e){host.innerHTML=`<p class="hint">${esc(e instanceof Error?e.message:'خطا در تهیه گزارش')}</p>`;}
 }
@@ -561,19 +643,36 @@ function reportTitle(id:string):string{
 
 function bindReportRunner():void{
   queueMicrotask(()=>enhanceDateFields(document));
-  el<HTMLButtonElement>('#arRun')?.addEventListener('click',renderReport);
-  el<HTMLButtonElement>('#arCsv')?.addEventListener('click',exportCsv);
-  el<HTMLButtonElement>('#arPrint')?.addEventListener('click',()=>window.print());
-  el<HTMLSelectElement>('#arAccount')?.addEventListener('change',()=>{if(activeReportId==='ledger')renderReport();});
-  el<HTMLButtonElement>('#arBackCatalog')?.addEventListener('click',()=>{activeReportId=null;renderReportsCatalog();});
+  bindReportsWorkspaceDelegation();
 }
 
+/** فقط این شناسه‌ها فیلتر حساب دفتر کل دارند */
+const REPORTS_WITH_ACCOUNT_FILTER = new Set(['ledger']);
+function reportNeedsAccountFilter(reportId:string):boolean{
+  return REPORTS_WITH_ACCOUNT_FILTER.has(reportId);
+}
 function renderReportRunner(reportId:string):void{
   if(!acc)return;
   const root=el<HTMLDivElement>('#accountingReportsWorkspace');if(!root)return;
   activeReportId=reportId;
+  const spec=filtersForReport(reportId);
+  const showAccount=!!spec.account;
+  const accountFilterHtml = showAccount
+    ? `<label class="field" id="arAccountWrap" data-report-filter="account"><span>حساب دفتر کل</span><select id="arAccount"><option value="">انتخاب حساب معین/تفصیلی</option>${acc.accounts.filter(a=>a.isActive&&a.level==='detail').map(a=>`<option value="${esc(a.id)}">${esc(a.code)} — ${esc(a.title)}</option>`).join('')}</select></label>`
+    : '';
+  const partyLabel = spec.party==='customer'?'مشتری':spec.party==='supplier'?'تأمین‌کننده':'طرف حساب';
+  const partyFilterHtml = spec.party
+    ? `<label class="field" id="arPartyWrap" data-report-filter="party"><span>${partyLabel}</span><select id="arParty"><option value="">همه</option>${partyOptionsHtml(spec.party)}</select></label>`
+    : '';
+  const productFilterHtml = spec.product
+    ? `<label class="field" id="arProductWrap" data-report-filter="product"><span>کالا</span><select id="arProduct"><option value="">همه کالاها</option>${productOptionsHtml()}</select></label>`
+    : '';
+  const hints:string[]=['بازه تاریخ را مشخص کنید'];
+  if(showAccount)hints.push('یک حساب دفتر کل انتخاب کنید');
+  if(spec.party)hints.push(`در صورت نیاز ${partyLabel} را محدود کنید (خالی = همه)`);
+  if(spec.product)hints.push('در صورت نیاز کالا را محدود کنید (خالی = همه)');
   root.innerHTML=`
-  <div class="card">
+  <div class="card accounting-report-runner" data-report-id="${esc(reportId)}">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;margin-bottom:8px">
       <div>
         <p class="hint" style="margin:0 0 4px">گزارش‌ها</p>
@@ -581,21 +680,25 @@ function renderReportRunner(reportId:string):void{
       </div>
       <button type="button" class="btn btn-secondary" id="arBackCatalog">همه گزارش‌ها</button>
     </div>
-    <p class="hint">فقط اسناد و فاکتورهای قطعی؛ داده عملیاتی تغییر نمی‌کند.</p>
     <input type="hidden" id="arType" value="${esc(reportId)}">
-    <div class="form-grid">
-      <label class="field">سال مالی<select id="arPeriod"><option value="">همه سال‌های مالی</option>${acc.fiscalPeriods.map(p=>`<option value="${esc(p.id)}">${esc(p.title)}</option>`).join('')}</select></label>
-      <label class="field">از تاریخ شمسی<input id="arFrom" placeholder="1405/01/01"></label>
-      <label class="field">تا تاریخ شمسی<input id="arTo" placeholder="1405/12/29"></label>
-      <label class="field" id="arAccountWrap" ${reportId==='ledger'?'':'hidden'}>حساب<select id="arAccount"><option value="">انتخاب حساب</option>${acc.accounts.filter(a=>a.isActive&&a.level==='detail').map(a=>`<option value="${esc(a.id)}">${esc(a.code)} — ${esc(a.title)}</option>`).join('')}</select></label>
+    <p class="hint" style="margin:4px 0 10px">${hints.join(' · ')}</p>
+    <div class="form-grid accounting-report-filters" style="margin-top:8px">
+      <label class="field">از تاریخ<input id="arFrom" placeholder="1405/01/01" inputmode="numeric" autocomplete="off"></label>
+      <label class="field">تا تاریخ<input id="arTo" placeholder="1405/12/29" inputmode="numeric" autocomplete="off"></label>
+      ${partyFilterHtml}
+      ${productFilterHtml}
+      ${accountFilterHtml}
     </div>
     <div class="actions" style="margin:10px 0">
       <button class="btn btn-primary" id="arRun">تهیه گزارش</button>
       <button class="btn btn-secondary" id="arCsv">خروجی Excel (CSV)</button>
       <button class="btn btn-secondary" id="arPrint">چاپ / PDF</button>
     </div>
-    <div id="arResult"><p class="hint">بازه را مشخص کنید و «تهیه گزارش» را بزنید.</p></div>
+    <div id="arResult"><p class="hint">فیلترها را تنظیم کنید و «تهیه گزارش» را بزنید.</p></div>
   </div>`;
+  if(!showAccount){
+    root.querySelectorAll('#arAccountWrap, #arAccount, [data-report-filter="account"]').forEach(n=>n.remove());
+  }
   bindReportRunner();
   if(reportId!=='ledger')renderReport();
 }
@@ -620,15 +723,89 @@ function renderReportsCatalog():void{
       </div>`).join('')}
   </div>`;
   queueMicrotask(()=>enhanceDateFields(root));
+  bindReportsWorkspaceDelegation();
+  // پشتیبان: اتصال مستقیم روی کاشی‌ها
   root.querySelectorAll<HTMLButtonElement>('[data-report-id]').forEach(btn=>{
-    btn.addEventListener('click',()=>renderReportRunner(btn.dataset.reportId||'trial'));
+    btn.addEventListener('click',(ev)=>{
+      ev.preventDefault();
+      ev.stopPropagation();
+      renderReportRunner(btn.dataset.reportId||'trial');
+    });
   });
+}
+
+
+let workspaceReportsBound = false;
+function bindReportsWorkspaceDelegation():void{
+  const root=el<HTMLDivElement>('#accountingReportsWorkspace');
+  if(!root || workspaceReportsBound)return;
+  workspaceReportsBound=true;
+  root.addEventListener('click',(ev)=>{
+    const target=ev.target as HTMLElement;
+    const tile=target.closest<HTMLButtonElement>('[data-report-id]');
+    if(tile && root.contains(tile) && !tile.closest('.accounting-report-runner')){
+      ev.preventDefault();
+      const id=tile.dataset.reportId||'trial';
+      renderReportRunner(id);
+      return;
+    }
+    if(target.closest('#arRun')){
+      ev.preventDefault();
+      renderReport();
+      return;
+    }
+    if(target.closest('#arBackCatalog')){
+      ev.preventDefault();
+      activeReportId=null;
+      renderReportsCatalog();
+      return;
+    }
+    if(target.closest('#arCsv')){
+      ev.preventDefault();
+      exportCsv();
+      return;
+    }
+    if(target.closest('#arPrint')){
+      ev.preventDefault();
+      window.print();
+      return;
+    }
+  });
+  root.addEventListener('change',(ev)=>{
+    const t=ev.target as HTMLElement;
+    if(t.id==='arAccount'||t.id==='arParty'||t.id==='arProduct'){
+      if(t.id==='arAccount' && activeReportId!=='ledger')return;
+      renderReport();
+    }
+  });
+}
+
+/** فراخوانی هنگام باز شدن تب گزارش‌ها تا دکمه‌ها حتماً فعال باشند */
+export async function ensureReportsUIReady():Promise<void>{
+  try{
+    if(!acc||!commerce||!costing){
+      [acc,commerce,costing]=await Promise.all([loadAccountingData(),loadCommerceData(),loadInventoryCostData()]);
+    }
+    const root=el<HTMLDivElement>('#accountingReportsWorkspace');
+    if(!root)return;
+    bindReportsWorkspaceDelegation();
+    if(activeReportId){
+      // بازسازی runner با فیلترها و اتصال
+      renderReportRunner(activeReportId);
+    }else{
+      renderReportsCatalog();
+    }
+  }catch(e){
+    console.error('[Anbarin] ensureReportsUIReady failed',e);
+    toast('آماده‌سازی گزارش‌ها انجام نشد','error');
+  }
 }
 
 export async function initAccountingReportsUI():Promise<void>{
   try{
     [acc,commerce,costing]=await Promise.all([loadAccountingData(),loadCommerceData(),loadInventoryCostData()]);
     const root=el<HTMLDivElement>('#accountingReportsWorkspace');if(!root)return;
+    bindReportsWorkspaceDelegation();
     renderReportsCatalog();
     window.addEventListener('accounting:data-updated',async()=>{
       [acc,commerce,costing]=await Promise.all([loadAccountingData(),loadCommerceData(),loadInventoryCostData()]);

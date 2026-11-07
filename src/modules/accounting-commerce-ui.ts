@@ -221,7 +221,7 @@ function nextInvoiceNumber(type:InvoiceType):string {
 function invoiceRows(type:InvoiceType):string {
   return (commerce?.invoices||[]).filter(i=>i.type===type).slice().reverse().map(i=>{
     const p=commerce?.parties.find(x=>x.id===i.partyId);
-    return `<tr><td>${esc(i.number)}</td><td>${esc(p?.name||'—')}</td><td>${esc(i.date)}</td><td>${money(i.grossRial)}</td><td>${i.status==='posted'?'قطعی':'پیش‌نویس'}</td><td><button class="btn btn-sm btn-secondary" data-print-invoice="${i.id}">چاپ</button> ${i.status==='draft'?`<button class="btn btn-sm btn-secondary" data-edit-invoice="${i.id}">ویرایش</button>${i.type==='proforma'?'پیش‌فاکتور؛ بدون سند':`<button class="btn btn-sm btn-primary" data-post-invoice="${i.id}">تسویه</button>`}`:'قطعی؛ ویرایش مستقیم غیرفعال'}</td></tr>`;
+    return `<tr><td>${esc(i.number)}</td><td>${esc(p?.name||'—')}</td><td>${esc(i.date)}</td><td>${money(i.grossRial)}</td><td>${i.status==='posted'?'قطعی':'پیش‌نویس'}</td><td><button class="btn btn-sm btn-secondary" data-print-invoice="${i.id}">چاپ / ارسال</button> ${i.status==='draft'?`<button class="btn btn-sm btn-secondary" data-edit-invoice="${i.id}">ویرایش</button>${i.type==='proforma'?'پیش‌فاکتور؛ بدون سند':`<button class="btn btn-sm btn-primary" data-post-invoice="${i.id}">تسویه</button>`}`:'قطعی؛ ویرایش مستقیم غیرفعال'}</td></tr>`;
   }).join('')||'<tr><td colspan="6">برای این بخش هنوز فاکتوری ثبت نشده است.</td></tr>';
 }
 function cashRows():string {
@@ -230,7 +230,7 @@ function cashRows():string {
 function addInvoicePaymentRow(part?:InvoicePaymentPart):void {
  const host=el<HTMLDivElement>('#invoicePaymentRows');if(!host)return;
  const row=document.createElement('div');row.className='form-grid invoice-payment-row';row.style.cssText='border:1px solid var(--border-color,#ddd);border-radius:8px;padding:10px;margin:8px 0;align-items:end';
- row.innerHTML=`<label class="field">روش پرداخت<select data-pay-method><option value="cash">نقدی</option><option value="card">کارت</option><option value="cheque">چک</option><option value="credit">اعتباری (مانده بدهی)</option></select></label><label class="field">مبلغ (${currency==='toman'?'تومان':'ریال'})<input data-pay-amount inputmode="numeric" placeholder="مبلغ این مرحله"></label><label class="field" data-pay-cheque hidden>شماره چک<input data-pay-cheque-number></label><label class="field" data-pay-cheque hidden>بانک<input data-pay-cheque-bank></label><label class="field" data-pay-cheque hidden>شماره حساب / شناسه صیادی<input data-pay-cheque-account></label><label class="field" data-pay-cheque hidden>سررسید چک شمسی<input data-pay-cheque-due placeholder="1405/01/30"></label><label class="field" data-pay-cheque hidden>توضیحات چک<input data-pay-cheque-note></label><button type="button" class="btn btn-sm btn-secondary" data-pay-remove>حذف این مرحله</button>`;
+ row.innerHTML=`<label class="field">روش پرداخت<select data-pay-method><option value="cash">نقدی</option><option value="card">کارت</option><option value="cheque">چک</option><option value="credit">اعتباری (مانده بدهی)</option></select></label><label class="field">مبلغ (${currency==='toman'?'تومان':'ریال'})<input data-pay-amount inputmode="numeric" placeholder="مبلغ این مرحله"></label><label class="field" data-pay-cheque hidden>شماره چک<input data-pay-cheque-number></label><label class="field" data-pay-cheque hidden>سریال چک<input data-pay-cheque-serial></label><label class="field" data-pay-cheque hidden>شناسه صیادی *<input data-pay-cheque-sayadi inputmode="numeric" placeholder="شناسه صیادی"></label><label class="field" data-pay-cheque hidden>بانک<input data-pay-cheque-bank></label><label class="field" data-pay-cheque hidden>سررسید چک<input data-pay-cheque-due placeholder="1405/01/30"></label><label class="field" data-pay-cheque hidden>توضیحات<input data-pay-cheque-note></label><button type="button" class="btn btn-sm btn-secondary" data-pay-remove>حذف</button>`;
  host.appendChild(row);const method=row.querySelector<HTMLSelectElement>('[data-pay-method]')!;method.value=part?.method||'cash';row.querySelector<HTMLInputElement>('[data-pay-amount]')!.value=part?formatMoneyFromRial(part.amountRial,currency):'';row.querySelector<HTMLInputElement>('[data-pay-cheque-number]')!.value=part?.chequeNumber||'';row.querySelector<HTMLInputElement>('[data-pay-cheque-bank]')!.value=part?.chequeBank||'';row.querySelector<HTMLInputElement>('[data-pay-cheque-account]')!.value=part?.chequeAccount||'';row.querySelector<HTMLInputElement>('[data-pay-cheque-due]')!.value=part?.chequeDueDate||'';row.querySelector<HTMLInputElement>('[data-pay-cheque-note]')!.value=part?.note||'';
  const toggle=()=>row.querySelectorAll<HTMLElement>('[data-pay-cheque]').forEach(x=>x.hidden=method.value!=='cheque');method.addEventListener('change',toggle);toggle();row.querySelector('[data-pay-remove]')!.addEventListener('click',()=>row.remove());
 }
@@ -297,24 +297,61 @@ function addProductToInvoice(productId:string, keepScanReady=false):void {
     el<HTMLElement>('#commerceInvoiceLines')?.lastElementChild?.scrollIntoView({behavior:'smooth',block:'nearest'});
   }
 }
+/** نرمال‌سازی متن فارسی برای جستجو (ی/ك، فاصله، ارقام) */
+function normalizeSearchText(value:string):string{
+  return digits(value||'')
+    .toLocaleLowerCase()
+    .replace(/[يى]/g,'ی')
+    .replace(/[ك]/g,'ک')
+    .replace(/[\u200c\u200f\u202a-\u202e]/g,' ')
+    .replace(/[\s‌]+/g,' ')
+    .trim();
+}
+/** کلمات نام کالا برای جستجو در کلمهٔ اول، دوم، … */
+function searchTokens(value:string):string[]{
+  return normalizeSearchText(value).split(/[\s\-_/\\.,،؛:]+/).filter(Boolean);
+}
+/**
+ * جستجوی هوشمند کالا:
+ * - فقط اولِ نام نیست؛ داخل نام و شروع هر کلمه هم چک می‌شود
+ * - مثال: «ن» → «شیر نبات»، «نان»، «پنیر» (اگر شامل ن باشد)
+ * اولویت: تطبیق دقیق > شروع نام > شروع یکی از کلمات > شامل در نام > کد/بارکد
+ */
 function invoiceProductMatches(value:string){
   const raw=(value||'').trim();if(!raw)return [];
-  const q=digits(raw).toLocaleLowerCase();
-  const qRaw=raw.toLocaleLowerCase();
-  return products.filter(p=>{
-    const name=(p.name||'').toLocaleLowerCase();
-    const code=digits(p.code||'').toLocaleLowerCase();
-    const sku=digits(p.sku||'').toLocaleLowerCase();
-    return name.includes(qRaw)||name.includes(q)||code.includes(q)||sku.includes(q)||digits(name).includes(q);
-  }).slice(0,12);
+  const q=normalizeSearchText(raw);
+  if(!q)return [];
+  const scored:Array<{p:typeof products[0];score:number}>=[];
+  for(const p of products){
+    const name=normalizeSearchText(p.name||'');
+    const code=normalizeSearchText(p.code||'');
+    const sku=normalizeSearchText(p.sku||'');
+    const words=searchTokens(p.name||'');
+    let score=0;
+    if(name===q||code===q||sku===q)score=100;
+    else if(name.startsWith(q))score=80;
+    else if(words.some(w=>w.startsWith(q)))score=70; // کلمه دوم، سوم، …
+    else if(name.includes(q))score=50; // هر جای نام
+    else if(words.some(w=>w.includes(q)))score=45;
+    else if(code.includes(q)||sku.includes(q))score=40;
+    else continue;
+    // ترجیح نام کوتاه‌تر در امتیاز مساوی
+    score+=Math.max(0,10-Math.min(10,name.length/4));
+    scored.push({p,score});
+  }
+  scored.sort((a,b)=>b.score-a.score||(a.p.name||'').localeCompare(b.p.name||'','fa'));
+  return scored.slice(0,20).map(x=>x.p);
 }
 function resolveInvoiceProduct(value:string){
   const raw=(value||'').trim();if(!raw)return null;
-  const q=digits(raw).toLocaleLowerCase();
-  const qRaw=raw.toLocaleLowerCase();
+  const q=normalizeSearchText(raw);
   const matches=invoiceProductMatches(value);
-  return matches.find(p=>p.name.trim().toLocaleLowerCase()===qRaw||p.name.trim().toLocaleLowerCase()===q||digits(p.code||'').toLocaleLowerCase()===q||digits(p.sku||'').toLocaleLowerCase()===q)
-    || (matches.length===1?matches[0]:null);
+  return matches.find(p=>{
+    const name=normalizeSearchText(p.name||'');
+    const code=normalizeSearchText(p.code||'');
+    const sku=normalizeSearchText(p.sku||'');
+    return name===q||code===q||sku===q;
+  })||(matches.length===1?matches[0]:null);
 }
 function renderInvoiceProductSuggestions(value:string,activeIndex=0):void{
  const host=el<HTMLDivElement>('#invoiceProductSuggestions');if(!host)return;const matches=invoiceProductMatches(value);if(!matches.length){host.innerHTML='';host.hidden=true;return;}
@@ -328,42 +365,194 @@ function settlementRow(part?:InvoicePaymentPart):string {
  return `<div class="settlement-payment-row form-grid" style="border:1px solid var(--border-color,#ddd);border-radius:8px;padding:12px;margin:8px 0;align-items:end">
  <label class="field">روش<select data-settle-method><option value="cash" ${method==='cash'?'selected':''}>نقدی</option><option value="card" ${method==='card'?'selected':''}>کارت‌خوان</option><option value="cheque" ${method==='cheque'?'selected':''}>چک</option><option value="credit" ${method==='credit'?'selected':''}>اعتباری (مانده حساب)</option></select></label>
  <label class="field">مبلغ (${currency==='toman'?'تومان':'ریال'})<input data-settle-amount inputmode="numeric" value="${part?esc(formatMoneyFromRial(part.amountRial,currency)):''}" placeholder="مبلغ"></label>
- <label class="field" data-settle-cheque ${method==='cheque'?'':'hidden'}>شماره چک<input data-settle-cheque-number value="${esc(part?.chequeNumber||'')}"></label>
- <label class="field" data-settle-cheque ${method==='cheque'?'':'hidden'}>بانک<input data-settle-cheque-bank value="${esc(part?.chequeBank||'')}"></label>
- <label class="field" data-settle-cheque ${method==='cheque'?'':'hidden'}>شماره حساب / شناسه صیادی<input data-settle-cheque-account value="${esc(part?.chequeAccount||'')}"></label>
- <label class="field" data-settle-cheque ${method==='cheque'?'':'hidden'}>تاریخ سررسید چک<input data-settle-cheque-due value="${esc(part?.chequeDueDate||'')}" placeholder="1405/01/30"></label>
+ <label class="field" data-settle-cheque ${method==='cheque'?'':'hidden'}>شماره چک<input data-settle-cheque-number value="${esc(part?.chequeNumber||'')}" placeholder="شماره روی چک"></label>
+ <label class="field" data-settle-cheque ${method==='cheque'?'':'hidden'}>سریال چک<input data-settle-cheque-serial value="${esc(part?.chequeSerial||'')}" placeholder="سریال / سری برگه"></label>
+ <label class="field" data-settle-cheque ${method==='cheque'?'':'hidden'}>شناسه صیادی *<input data-settle-cheque-sayadi value="${esc(part?.chequeSayadi||part?.chequeAccount||'')}" inputmode="numeric" placeholder="شناسه ۱۶ رقمی صیادی" required></label>
+ <label class="field" data-settle-cheque ${method==='cheque'?'':'hidden'}>بانک<input data-settle-cheque-bank value="${esc(part?.chequeBank||'')}" placeholder="نام بانک"></label>
+ <label class="field" data-settle-cheque ${method==='cheque'?'':'hidden'}>تاریخ سررسید چک<input data-settle-cheque-due value="${esc(part?.chequeDueDate||'')}" placeholder="1405/01/30" inputmode="numeric"></label>
  <label class="field" data-settle-cheque ${method==='cheque'?'':'hidden'}>توضیحات چک<input data-settle-cheque-note value="${esc(part?.note||'')}"></label>
  <button type="button" class="btn btn-sm btn-secondary" data-settle-remove>حذف مرحله</button></div>`;
 }
 function openInvoiceSettlementSheet(invoiceId:string):void {
- const target=commerce?.invoices.find(i=>i.id===invoiceId);if(!target||!commerce)return;
+ const target=commerce?.invoices.find(i=>i.id===invoiceId);if(!target||!commerce){toast('فاکتور پیدا نشد.','error');return;}
+ if(target.status==='posted'){toast('این فاکتور قبلاً قطعی شده است.','info');return;}
+ if(target.type==='proforma'){toast('پیش‌فاکتور قابل تسویه حسابداری نیست.','error');return;}
  document.getElementById('invoiceSettlementSheet')?.remove();
  const party=commerce.parties.find(p=>p.id===target.partyId);
  const overlay=document.createElement('div');overlay.id='invoiceSettlementSheet';overlay.dir='rtl';
  overlay.style.cssText='position:fixed;inset:0;z-index:10120;background:var(--surface,#fff);color:var(--text,#222);overflow:auto;padding:clamp(12px,3vw,28px)';
  const isSale=isSaleInvoiceType(target.type);
  const actionLabel=isSale?'دریافت':'پرداخت';
+ const defaultAmount=Math.max(0,target.grossRial);
  overlay.innerHTML=`<div style="max-width:1000px;margin:0 auto"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><div><h2 style="margin:0 0 6px">تسویه فاکتور — ${actionLabel}</h2><p class="hint" style="margin:0">شماره ${esc(target.number)} · ${esc(party?.name||'—')} · مبلغ نهایی ${money(target.grossRial)}</p></div><button type="button" class="btn btn-secondary" id="settlementBack">بازگشت</button></div>
- <div class="card" style="margin-top:16px"><h3>نوع ${actionLabel}</h3><p class="hint">روش و مبلغ را مشخص کنید. می‌توانید چند روش را ترکیب کنید (مثلاً بخشی نقد و بخشی چک). مانده به‌صورت اعتباری ثبت می‌شود.</p><div id="settlementRows">${((target.paymentParts||[]).filter(x=>x.method!=='credit').length?(target.paymentParts||[]).filter(x=>x.method!=='credit'):[{method:'cash' as const,amountRial:Math.max(0,target.grossRial)}]).map(x=>settlementRow(x)).join('')}</div><button type="button" class="btn btn-secondary" id="settlementAdd">افزودن روش ${actionLabel}</button>
- <div class="form-grid" style="margin-top:12px"><label class="field">سررسید مانده اعتباری (شمسی)<input id="settlementDueDate" value="${esc(target.dueDate||'')}" placeholder="1405/01/30"></label></div><div class="card" style="margin-top:12px"><div id="settlementTotals">در حال محاسبه...</div><div id="settlementCredit" class="hint" style="margin-top:8px"></div></div>
+ <div class="card" style="margin-top:16px"><h3>نوع ${actionLabel}</h3><p class="hint">روش و مبلغ را مشخص کنید. می‌توانید چند روش را ترکیب کنید (مثلاً بخشی نقد و بخشی چک). مانده به‌صورت اعتباری ثبت می‌شود.</p><div id="settlementRows">${((target.paymentParts||[]).filter(x=>x.method!=='credit').length?(target.paymentParts||[]).filter(x=>x.method!=='credit'):[{method:'cash' as const,amountRial:defaultAmount}]).map(x=>settlementRow(x)).join('')}</div><button type="button" class="btn btn-secondary" id="settlementAdd">افزودن روش ${actionLabel}</button>
+ <div class="form-grid" style="margin-top:12px"><label class="field">سررسید مانده اعتباری (شمسی)<input id="settlementDueDate" value="${esc(target.dueDate||target.date||'')}" placeholder="1405/01/30" inputmode="numeric" autocomplete="off"></label></div><div class="card" style="margin-top:12px"><div id="settlementTotals">در حال محاسبه...</div><div id="settlementCredit" class="hint" style="margin-top:8px"></div></div>
  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px"><button type="button" class="btn btn-primary" id="settlementConfirm">تأیید ${actionLabel} و ثبت قطعی</button><button type="button" class="btn btn-secondary" id="settlementCancel">انصراف</button></div></div></div>`;
  document.body.appendChild(overlay);
+ queueMicrotask(()=>enhanceDateFields(overlay));
+
  const host=overlay.querySelector<HTMLDivElement>('#settlementRows')!;
- const read=():InvoicePaymentPart[]=>[...host.querySelectorAll<HTMLElement>('.settlement-payment-row')].map(row=>{const method=row.querySelector<HTMLSelectElement>('[data-settle-method]')!.value as InvoicePaymentPart['method'];return {method,amountRial:parseMoneyToRial(digits(row.querySelector<HTMLInputElement>('[data-settle-amount]')!.value||'0'),currency),...(method==='cheque'?{chequeNumber:row.querySelector<HTMLInputElement>('[data-settle-cheque-number]')!.value,chequeBank:row.querySelector<HTMLInputElement>('[data-settle-cheque-bank]')!.value,chequeAccount:row.querySelector<HTMLInputElement>('[data-settle-cheque-account]')!.value,chequeDueDate:digits(row.querySelector<HTMLInputElement>('[data-settle-cheque-due]')!.value),note:row.querySelector<HTMLInputElement>('[data-settle-cheque-note]')!.value}:{})};}).filter(x=>x.amountRial>0);
- const update=()=>{const parts=read(),paid=parts.reduce((n,x)=>n+x.amountRial,0),credit=Math.max(0,target.grossRial-paid);overlay.querySelector<HTMLElement>('#settlementTotals')!.textContent=`مبلغ فاکتور: ${money(target.grossRial)} · دریافت/پرداخت واقعی: ${money(paid)} · مانده اعتباری: ${money(credit)}`;const creditNode=overlay.querySelector<HTMLElement>('#settlementCredit');if(creditNode)creditNode.textContent=credit>0?`مبلغ اعتباری فاکتور (مانده حساب): ${money(credit)} — این مبلغ دریافت نقدی یا بانکی نیست.`:'مبلغ اعتباری: ۰';};
- const bind=(row:HTMLElement)=>{row.querySelector<HTMLSelectElement>('[data-settle-method]')!.addEventListener('change',()=>{const cheque=row.querySelector<HTMLSelectElement>('[data-settle-method]')!.value==='cheque';row.querySelectorAll<HTMLElement>('[data-settle-cheque]').forEach(x=>x.hidden=!cheque);update();});row.querySelectorAll('input').forEach(x=>x.addEventListener('input',update));row.querySelector('[data-settle-remove]')!.addEventListener('click',()=>{row.remove();update();});};
+ const normalizeJalali=(raw:string):string=>{
+   const v=digits(raw||'').trim().replace(/-/g,'/');
+   const m=v.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
+   if(!m)return v;
+   return `${m[1]}/${m[2].padStart(2,'0')}/${m[3].padStart(2,'0')}`;
+ };
+ const read=():InvoicePaymentPart[]=>[...host.querySelectorAll<HTMLElement>('.settlement-payment-row')].map(row=>{
+   const method=row.querySelector<HTMLSelectElement>('[data-settle-method]')!.value as InvoicePaymentPart['method'];
+   const amountRial=parseMoneyToRial(digits(row.querySelector<HTMLInputElement>('[data-settle-amount]')!.value||'0'),currency);
+   if(method==='cheque'){
+     const sayadi=digits(row.querySelector<HTMLInputElement>('[data-settle-cheque-sayadi]')?.value||'').replace(/\D/g,'');
+     return {
+       method,
+       amountRial,
+       chequeNumber:row.querySelector<HTMLInputElement>('[data-settle-cheque-number]')!.value.trim(),
+       chequeSerial:row.querySelector<HTMLInputElement>('[data-settle-cheque-serial]')?.value.trim()||'',
+       chequeSayadi:sayadi,
+       chequeAccount:sayadi,
+       chequeBank:row.querySelector<HTMLInputElement>('[data-settle-cheque-bank]')!.value.trim(),
+       chequeDueDate:normalizeJalali(row.querySelector<HTMLInputElement>('[data-settle-cheque-due]')!.value),
+       note:row.querySelector<HTMLInputElement>('[data-settle-cheque-note]')!.value.trim(),
+     };
+   }
+   return {method,amountRial};
+ }).filter(x=>x.amountRial>0);
+
+ const update=()=>{
+   const parts=read();
+   const paid=parts.reduce((n,x)=>n+x.amountRial,0);
+   const credit=Math.max(0,target.grossRial-paid);
+   overlay.querySelector<HTMLElement>('#settlementTotals')!.textContent=`مبلغ فاکتور: ${money(target.grossRial)} · دریافت/پرداخت واقعی: ${money(paid)} · مانده اعتباری: ${money(credit)}`;
+   const creditNode=overlay.querySelector<HTMLElement>('#settlementCredit');
+   if(creditNode)creditNode.textContent=credit>0?`مبلغ اعتباری فاکتور (مانده حساب): ${money(credit)} — این مبلغ دریافت نقدی یا بانکی نیست.`:'مبلغ اعتباری: ۰ — تسویه کامل نقدی/کارتی/چکی';
+ };
+
+ const bind=(row:HTMLElement)=>{
+   row.querySelector<HTMLSelectElement>('[data-settle-method]')!.addEventListener('change',()=>{
+     const cheque=row.querySelector<HTMLSelectElement>('[data-settle-method]')!.value==='cheque';
+     row.querySelectorAll<HTMLElement>('[data-settle-cheque]').forEach(x=>x.hidden=!cheque);
+     update();
+   });
+   row.querySelectorAll('input').forEach(x=>x.addEventListener('input',update));
+   row.querySelector('[data-settle-remove]')!.addEventListener('click',()=>{row.remove();update();});
+ };
  host.querySelectorAll<HTMLElement>('.settlement-payment-row').forEach(bind);
  const add=()=>{const wrap=document.createElement('div');wrap.innerHTML=settlementRow();const row=wrap.firstElementChild as HTMLElement;host.appendChild(row);bind(row);update();};
  overlay.querySelector('#settlementAdd')!.addEventListener('click',add);
- overlay.querySelector('#settlementBack')!.addEventListener('click',()=>overlay.remove());overlay.querySelector('#settlementCancel')!.addEventListener('click',()=>overlay.remove());
+ overlay.querySelector('#settlementBack')!.addEventListener('click',()=>overlay.remove());
+ overlay.querySelector('#settlementCancel')!.addEventListener('click',()=>overlay.remove());
  host.addEventListener('input',update);host.addEventListener('change',update);update();
- overlay.querySelector<HTMLButtonElement>('#settlementConfirm')!.addEventListener('click',async()=>{try{const activeCommerce=commerce;if(!activeCommerce)throw new Error('اطلاعات فاکتور در دسترس نیست.');const realParts=read().filter(x=>x.method!=='credit');const total=realParts.reduce((n,x)=>n+x.amountRial,0);if(total>target.grossRial)throw new Error('جمع دریافت/پرداخت نباید از مبلغ فاکتور بیشتر شود.');const creditAmount=Math.max(0,target.grossRial-total);const parts:InvoicePaymentPart[]=[...realParts,...(creditAmount>0?[{method:'credit' as const,amountRial:creditAmount,note:'مانده اعتباری فاکتور'}]:[])];const dueDate=digits(overlay.querySelector<HTMLInputElement>('#settlementDueDate')!.value);if(creditAmount>0&&!dueDate)throw new Error('برای مانده اعتباری، تاریخ سررسید را مشخص کنید.');const chequeParts=parts.filter(x=>x.method==='cheque');if(chequeParts.some(x=>!x.chequeNumber?.trim()||!x.chequeBank?.trim()||!x.chequeDueDate))throw new Error('برای هر چک، شماره چک، بانک و تاریخ سررسید الزامی است.');const chequeKeys=chequeParts.map(x=>`${(x.chequeNumber||'').trim()}|${(x.chequeBank||'').trim().toLocaleLowerCase()}`);if(new Set(chequeKeys).size!==chequeKeys.length||chequeKeys.some(k=>activeCommerce.cashTransactions.some(t=>t.method==='cheque'&&t.chequeStatus!=='void'&&`${(t.chequeNumber||'').trim()}|${(t.chequeBank||'').trim().toLocaleLowerCase()}`===k)))throw new Error('شماره چک با همین بانک قبلاً ثبت شده است.');if(realParts.length&&!accountOptionsCache)throw new Error('برای ثبت دریافت/پرداخت، ابتدا حساب صندوق یا بانک فعال تعریف کنید.');
- target.paymentParts=parts;target.paymentTerms=invoicePaymentTermsLabel(parts);target.dueDate=dueDate;await saveCommerceData(activeCommerce);
- const result=await postInvoice(target.id,activeCommerce);commerce=result.commerce;
- for(let n=0;n<realParts.length;n++){const part=realParts[n];const period=invoicePeriodForDate(target.date);const tx=await createCashTransaction({type:(target.type==='sale'||target.type==='return-purchase')?'receipt':'payment',number:`${(target.type==='sale'||target.type==='return-purchase')?'IR':'IP'}-${target.number}-${n+1}`,date:target.date,fiscalPeriodId:period,partyId:target.partyId,cashAccountId:accountOptionsCache.match(/value="([^"]+)"/)?.[1]||'',amountRial:part.amountRial,description:`تسویه فاکتور ${target.number} (${part.method==='cash'?'نقدی':part.method==='card'?'کارت':'چک'})`,method:part.method==='cash'?'cash':part.method==='card'?'card':'cheque',allocations:[{invoiceId:target.id,amountRial:part.amountRial}],chequeNumber:part.chequeNumber,chequeBank:part.chequeBank,chequeAccount:part.chequeAccount,chequeNote:part.note,chequeDueDate:part.chequeDueDate},commerce);commerce=tx.commerce;}
- await saveCommerceData(commerce);overlay.remove();await render();refreshAccounting();toast('دریافت / پرداخت در برگه مستقل ثبت شد و به فاکتور بازگشتید.','success');
- }catch(e){toast(e instanceof Error?e.message:'خطا در ثبت دریافت / پرداخت','error');}});
+
+ const resolveCashAccountId=async():Promise<string>=>{
+   // از کش گزینه‌ها
+   const fromCache=accountOptionsCache.match(/value="([^"]+)"/)?.[1];
+   if(fromCache)return fromCache;
+   const acc=await loadAccountingData();
+   const preferred=acc.accounts.find(a=>a.isActive&&a.level==='detail'&&(a.id==='det-cash'||a.id==='det-bank'));
+   if(preferred)return preferred.id;
+   const anyCash=acc.accounts.find(a=>a.isActive&&a.level==='detail'&&(/صندوق|بانک|تنخواه/.test(a.title)||a.code.startsWith('1101')||a.code.startsWith('111')));
+   if(anyCash)return anyCash.id;
+   throw new Error('حساب صندوق یا بانک فعال پیدا نشد. از بخش کدینگ حساب صندوق/بانک را فعال کنید.');
+ };
+
+ overlay.querySelector<HTMLButtonElement>('#settlementConfirm')!.addEventListener('click',async()=>{
+   const btn=overlay.querySelector<HTMLButtonElement>('#settlementConfirm');
+   if(btn){btn.disabled=true;btn.textContent='در حال ثبت...';}
+   try{
+     const activeCommerce=commerce;
+     if(!activeCommerce)throw new Error('اطلاعات فاکتور در دسترس نیست.');
+     const live=activeCommerce.invoices.find(i=>i.id===target.id);
+     if(!live)throw new Error('فاکتور پیدا نشد.');
+     if(live.status==='posted')throw new Error('این فاکتور قبلاً قطعی شده است.');
+
+     const realParts=read().filter(x=>x.method!=='credit');
+     const total=realParts.reduce((n,x)=>n+x.amountRial,0);
+     if(total>live.grossRial+1)throw new Error('جمع دریافت/پرداخت نباید از مبلغ فاکتور بیشتر شود.');
+     const creditAmount=Math.max(0,live.grossRial-total);
+     const parts:InvoicePaymentPart[]=[
+       ...realParts,
+       ...(creditAmount>0?[{method:'credit' as const,amountRial:creditAmount,note:'مانده اعتباری فاکتور'}]:[]),
+     ];
+     let dueDate=normalizeJalali(overlay.querySelector<HTMLInputElement>('#settlementDueDate')!.value);
+     if(creditAmount>0&&!dueDate){
+       dueDate=normalizeJalali(live.date||'')||normalizeJalali(todayJalali());
+     }
+     if(creditAmount>0&&!/^\d{4}\/\d{2}\/\d{2}$/.test(dueDate)){
+       throw new Error('برای مانده اعتباری، تاریخ سررسید معتبر شمسی وارد کنید (مثال 1405/01/30).');
+     }
+
+     const chequeParts=parts.filter(x=>x.method==='cheque');
+     for(const x of chequeParts){
+       if(!x.chequeNumber?.trim()||!x.chequeBank?.trim()||!x.chequeDueDate||!/^\d{4}\/\d{2}\/\d{2}$/.test(x.chequeDueDate||'')){
+         throw new Error('برای هر چک، شماره چک، بانک و تاریخ سررسید معتبر الزامی است.');
+       }
+       const sayadi=(x.chequeSayadi||x.chequeAccount||'').replace(/\D/g,'');
+       if(!sayadi||sayadi.length<6) throw new Error('شناسه صیادی برای هر چک الزامی است (حداقل ۶ رقم).');
+       x.chequeSayadi=sayadi;
+       x.chequeAccount=x.chequeAccount||sayadi;
+     }
+     const chequeKeys=chequeParts.map(x=>`${(x.chequeNumber||'').trim()}|${(x.chequeBank||'').trim().toLocaleLowerCase()}`);
+     if(new Set(chequeKeys).size!==chequeKeys.length)throw new Error('شماره چک تکراری در همین تسویه وجود دارد.');
+     if(chequeKeys.some(k=>activeCommerce.cashTransactions.some(t=>t.method==='cheque'&&t.chequeStatus!=='void'&&`${(t.chequeNumber||'').trim()}|${(t.chequeBank||'').trim().toLocaleLowerCase()}`===k))){
+       throw new Error('شماره چک با همین بانک قبلاً ثبت شده است.');
+     }
+
+     // ذخیره شرایط پرداخت روی پیش‌نویس
+     live.paymentParts=parts;
+     live.paymentTerms=invoicePaymentTermsLabel(parts);
+     live.dueDate=dueDate||live.dueDate||'';
+     live.updatedAt=new Date().toISOString();
+     await saveCommerceData(activeCommerce);
+
+     // قطعی‌سازی فاکتور (سند حسابداری + انبار)
+     const result=await postInvoice(live.id,activeCommerce);
+     commerce=result.commerce;
+
+     // ثبت دریافت/پرداخت‌های واقعی
+     if(realParts.length){
+       const cashAccountId=await resolveCashAccountId();
+       for(let n=0;n<realParts.length;n++){
+         const part=realParts[n];
+         const period=invoicePeriodForDate(live.date);
+         const isReceipt=live.type==='sale'||live.type==='return-purchase';
+         const tx=await createCashTransaction({
+           type:isReceipt?'receipt':'payment',
+           number:`${isReceipt?'IR':'IP'}-${live.number}-${n+1}`,
+           date:live.date,
+           fiscalPeriodId:period,
+           partyId:live.partyId,
+           cashAccountId,
+           amountRial:part.amountRial,
+           description:`تسویه فاکتور ${live.number} (${part.method==='cash'?'نقدی':part.method==='card'?'کارت':'چک'})`,
+           method:part.method==='cash'?'cash':part.method==='card'?'card':'cheque',
+           allocations:[{invoiceId:live.id,amountRial:part.amountRial}],
+           chequeNumber:part.chequeNumber,
+           chequeBank:part.chequeBank,
+           chequeAccount:part.chequeAccount,
+           chequeNote:part.note,
+           chequeDueDate:part.chequeDueDate,
+         },commerce);
+         commerce=tx.commerce;
+       }
+       await saveCommerceData(commerce);
+     }
+
+     overlay.remove();
+     await render();
+     refreshAccounting();
+     toast(creditAmount>0
+       ?`فاکتور قطعی شد. ${actionLabel} واقعی ثبت شد و مانده اعتباری ${money(creditAmount)} روی حساب طرف ماند.`
+       :`فاکتور قطعی شد و ${actionLabel} کامل ثبت شد.`,
+       'success');
+   }catch(e){
+     console.error('[settlement]',e);
+     toast(e instanceof Error?e.message:'خطا در ثبت تسویه فاکتور','error');
+   }finally{
+     if(btn && document.body.contains(btn)){btn.disabled=false;btn.textContent=`تأیید ${actionLabel} و ثبت قطعی`;}
+   }
+ });
 }
+
 function updateInvoiceTotals():void {
   let net=0;
   document.querySelectorAll<HTMLElement>('.commerce-line').forEach(row=>{
@@ -394,13 +583,247 @@ function applyInvoiceTaxRate():void {
   const taxInput=el<HTMLInputElement>('#invoiceTax'); if(taxInput)taxInput.value=formatMoneyFromRial(tax,currency);
   updateInvoiceTotals();
 }
+type InvoicePaperSize = 'a4'|'a5'|'roll80';
+
+function companyHeaderHtml():string{
+  const c=commerce?.companyProfile;
+  const name=c?.name?.trim()||'انبارین پرو';
+  const lines=[
+    c?.nationalId?`شناسه/ملی: ${esc(c.nationalId)}`:'',
+    c?.economicCode?`کد اقتصادی: ${esc(c.economicCode)}`:'',
+    c?.phone?`تلفن: ${esc(c.phone)}`:'',
+    c?.address?`نشانی: ${esc(c.address)}`:'',
+  ].filter(Boolean);
+  return `<div class="company"><div class="company-name">${esc(name)}</div>${lines.length?`<div class="muted">${lines.join(' | ')}</div>`:''}</div>`;
+}
+
+function buildInvoiceShareText(invoice:NonNullable<CommerceData['invoices'][0]>, party:{name:string;phone?:string}):string{
+  const lines:string[]=[];
+  lines.push(`فاکتور ${invoiceTypeTitle(invoice.type)} شماره ${invoice.number}`);
+  lines.push(`تاریخ: ${invoice.date}`);
+  lines.push(`طرف حساب: ${party.name}`);
+  lines.push('— اقلام —');
+  invoice.lines.forEach((l,i)=>{
+    lines.push(`${i+1}) ${l.description} | ${fa(l.quantityMilli/1000)} ${l.unit||'عدد'} | ${money(l.totalRial)}`);
+  });
+  lines.push('— جمع —');
+  lines.push(`خالص: ${money(invoice.netRial)}`);
+  if(invoice.taxRial)lines.push(`مالیات: ${money(invoice.taxRial)}`);
+  lines.push(`مبلغ نهایی: ${money(invoice.grossRial)}`);
+  lines.push(`وضعیت: ${invoice.status==='posted'?'قطعی':'پیش‌نویس'}`);
+  if(invoice.notes?.trim())lines.push(`یادداشت: ${invoice.notes.trim()}`);
+  lines.push('ارسال‌شده از انبارین پرو');
+  return lines.join('\n');
+}
+
+function invoicePrintStyles(paper:InvoicePaperSize):string{
+  if(paper==='roll80'){
+    return `
+@page{size:80mm auto;margin:2mm}
+*{box-sizing:border-box}
+body{font-family:Tahoma,"Segoe UI",Arial,sans-serif;color:#111;margin:0;padding:4px;font-size:11px;width:72mm;max-width:72mm}
+h1{font-size:14px;text-align:center;margin:4px 0}
+.company{text-align:center;margin-bottom:6px}
+.company-name{font-weight:700;font-size:13px}
+.muted{color:#444;font-size:10px}
+.panel{border:none;padding:2px 0;margin:4px 0}
+.meta{display:block}
+.meta div{padding:2px 0;background:transparent;border-bottom:1px dashed #999}
+table{width:100%;border-collapse:collapse;margin:6px 0;font-size:10px}
+th,td{border-top:1px dashed #999;border-bottom:1px dashed #999;border-left:none;border-right:none;padding:3px 2px;text-align:right}
+th{background:transparent}
+.sum{max-width:100%;margin:6px 0}
+.sum div{display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px dashed #bbb}
+.note{border:1px dashed #999;padding:4px;font-size:10px}
+.sign{display:none}
+.head{display:block}
+.noprint{margin:8px 0}
+button{margin:2px;padding:6px 10px}
+@media print{.noprint{display:none!important}body{width:72mm}}
+`;
+  }
+  const page = paper==='a5' ? 'A5' : 'A4';
+  const baseFont = paper==='a5' ? '11px' : '12px';
+  const h1 = paper==='a5' ? '16px' : '20px';
+  return `
+@page{size:${page};margin:${paper==='a5'?'8mm':'12mm'}}
+*{box-sizing:border-box}
+body{font-family:Tahoma,"Segoe UI",Arial,sans-serif;color:#172033;margin:0;padding:12px;font-size:${baseFont}}
+h1{font-size:${h1};text-align:center;margin:0 0 6px}
+.company{text-align:center;margin-bottom:10px}
+.company-name{font-weight:700;font-size:1.1em}
+.muted{color:#667085}
+.head{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}
+.panel{border:1px solid #cbd5e1;border-radius:8px;padding:10px}
+.meta{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.meta div{padding:6px;background:#f8fafc;border-radius:5px}
+table{width:100%;border-collapse:collapse;margin:12px 0}
+th,td{border:1px solid #cbd5e1;padding:6px 7px;text-align:right}
+th{background:#f1f5f9}
+.sum{max-width:360px;margin-right:auto}
+.sum div{display:flex;justify-content:space-between;padding:6px;border-bottom:1px solid #e2e8f0}
+.note{white-space:pre-wrap;border:1px dashed #cbd5e1;padding:8px;min-height:28px}
+.sign{display:grid;grid-template-columns:1fr 1fr;gap:36px;margin-top:40px;text-align:center}
+.sign div{border-top:1px solid #94a3b8;padding-top:6px}
+.noprint{margin:10px 0;display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+button{padding:8px 12px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;cursor:pointer}
+button.primary{background:#0f766e;color:#fff;border-color:#0f766e}
+@media print{.noprint{display:none!important}body{padding:0}}
+`;
+}
+
+function buildInvoicePrintHtml(invoice:NonNullable<CommerceData['invoices'][0]>, party:{name:string;nationalId?:string;economicCode?:string;registrationNumber?:string;phone?:string;postalCode?:string;address?:string}, paper:InvoicePaperSize):string{
+  const compact=paper==='roll80';
+  const rows=invoice.lines.map((l,n)=>compact
+    ? `<tr><td colspan="2"><b>${n+1}. ${esc(l.description)}</b><br>${fa(l.quantityMilli/1000)} ${esc(l.unit||'عدد')} × ${money(l.unitPriceRial)}${(l.discountRial||0)?` − تخفیف ${money(l.discountRial||0)}`:''}<br><b>${money(l.totalRial)}</b></td></tr>`
+    : `<tr><td>${n+1}</td><td>${esc(l.description)}</td><td>${esc(l.unit||'عدد')}</td><td>${fa(l.quantityMilli/1000)}</td><td>${money(l.unitPriceRial)}</td><td>${money(l.discountRial||0)}</td><td>${money(l.totalRial)}</td></tr>`
+  ).join('');
+  const tableHead=compact
+    ? '<thead><tr><th colspan="2">اقلام</th></tr></thead>'
+    : '<thead><tr><th>ردیف</th><th>شرح</th><th>واحد</th><th>تعداد</th><th>فی</th><th>تخفیف</th><th>جمع</th></tr></thead>';
+  const partyBlock=compact
+    ? `<div class="panel"><b>${isSaleInvoiceType(invoice.type)?'خریدار':'فروشنده'}:</b> ${esc(party.name)}<br>${party.phone?`تلفن: ${esc(party.phone)}`:''}</div>
+       <div class="meta"><div>شماره: <b>${esc(invoice.number)}</b></div><div>تاریخ: <b>${esc(invoice.date)}</b></div><div>وضعیت: <b>${invoice.status==='posted'?'قطعی':'پیش‌نویس'}</b></div></div>`
+    : `<div class="head"><div class="panel"><b>مشخصات ${isSaleInvoiceType(invoice.type)?'خریدار':'فروشنده'}</b>
+        <p>${esc(party.name)}</p>
+        <p>شناسه ملی: ${esc(party.nationalId||'—')} | کد اقتصادی: ${esc(party.economicCode||'—')}</p>
+        <p>شماره ثبت: ${esc(party.registrationNumber||'—')}</p>
+        <p>تلفن: ${esc(party.phone||'—')} | کد پستی: ${esc(party.postalCode||'—')}</p>
+        <p>نشانی: ${esc(party.address||'—')}</p></div>
+        <div class="panel meta">
+          <div>شماره فاکتور<br><b>${esc(invoice.number)}</b></div>
+          <div>تاریخ<br><b>${esc(invoice.date)}</b></div>
+          <div>نوع<br><b>${invoiceTypeTitle(invoice.type)}</b></div>
+          <div>وضعیت<br><b>${invoice.status==='posted'?'قطعی':'پیش‌نویس'}</b></div>
+        </div></div>`;
+  return `<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>فاکتور ${esc(invoice.number)}</title>
+<style>${invoicePrintStyles(paper)}</style></head><body>
+${companyHeaderHtml()}
+<h1>فاکتور ${invoiceTypeTitle(invoice.type)}</h1>
+${partyBlock}
+<table>${tableHead}<tbody>${rows}</tbody></table>
+<div class="sum">
+  <div><span>جمع خالص</span><b>${money(invoice.netRial)}</b></div>
+  <div><span>مالیات</span><b>${money(invoice.taxRial)}</b></div>
+  <div><span>مبلغ نهایی</span><b>${money(invoice.grossRial)}</b></div>
+</div>
+${invoice.notes?.trim()?`<div class="note">${esc(invoice.notes)}</div>`:''}
+${compact?'':`<div class="sign"><div>امضای فروشنده</div><div>امضای خریدار</div></div>`}
+<div class="noprint">
+  <button class="primary" type="button" onclick="window.print()">چاپ</button>
+  <button type="button" onclick="window.close()">بستن</button>
+</div>
+<script>window.addEventListener('load',()=>{try{window.focus();}catch(e){}});</script>
+</body></html>`;
+}
+
+function openInvoicePrintWindow(html:string, paper:InvoicePaperSize):void{
+  const w=window.open('','_blank',paper==='roll80'?'width=420,height=720':'width=1000,height=800');
+  if(!w){toast('اجازه بازشدن پنجره چاپ را در مرورگر فعال کنید.','error');return;}
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  // چاپ خودکار با کمی تأخیر برای بارگذاری فونت
+  setTimeout(()=>{try{w.print();}catch{/* ignore */}},350);
+}
+
+function shareInvoiceText(text:string, channel:'whatsapp'|'telegram'|'rubika'|'copy'|'system', phone?:string):void{
+  const encoded=encodeURIComponent(text);
+  if(channel==='copy'){
+    void navigator.clipboard.writeText(text).then(
+      ()=>toast('متن فاکتور کپی شد. می‌توانید در هر پیام‌رسان بچسبانید.','success'),
+      ()=>toast('کپی متن ممکن نشد.','error'),
+    );
+    return;
+  }
+  if(channel==='system' && typeof navigator.share==='function'){
+    void navigator.share({title:'فاکتور',text}).then(
+      ()=>toast('اشتراک‌گذاری انجام شد.','success'),
+      ()=>{/* کاربر لغو کرد */},
+    );
+    return;
+  }
+  if(channel==='whatsapp'){
+    const digitsPhone=(phone||'').replace(/\D/g,'');
+    const url=digitsPhone
+      ? `https://wa.me/${digitsPhone.startsWith('0')?`98${digitsPhone.slice(1)}`:digitsPhone}?text=${encoded}`
+      : `https://wa.me/?text=${encoded}`;
+    window.open(url,'_blank','noopener,noreferrer');
+    return;
+  }
+  if(channel==='telegram'){
+    window.open(`https://t.me/share/url?url=${encodeURIComponent(' ')}&text=${encoded}`,'_blank','noopener,noreferrer');
+    return;
+  }
+  if(channel==='rubika'){
+    // روبیکا API وب عمومی استاندارد ندارد؛ متن کپی می‌شود تا در اپ بچسبانید
+    void navigator.clipboard.writeText(text).then(
+      ()=>toast('متن فاکتور کپی شد. اپ روبیکا را باز کنید و بچسبانید.','success'),
+      ()=>toast('کپی برای روبیکا ممکن نشد.','error'),
+    );
+    return;
+  }
+}
+
+function openInvoicePrintShareSheet(invoiceId:string):void{
+  const invoice=commerce?.invoices.find(i=>i.id===invoiceId);
+  if(!invoice||!commerce){toast('فاکتور پیدا نشد.','error');return;}
+  const party=commerce.parties.find(p=>p.id===invoice.partyId);
+  if(!party){toast('طرف حساب فاکتور پیدا نشد.','error');return;}
+  document.getElementById('invoicePrintShareSheet')?.remove();
+  const overlay=document.createElement('div');
+  overlay.id='invoicePrintShareSheet';
+  overlay.dir='rtl';
+  overlay.style.cssText='position:fixed;inset:0;z-index:10200;background:rgba(15,23,42,.45);display:flex;align-items:flex-end;justify-content:center;padding:12px';
+  overlay.innerHTML=`<div class="card" style="width:min(560px,100%);max-height:92vh;overflow:auto;margin:0;border-radius:16px 16px 12px 12px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <div>
+        <h3 style="margin:0 0 4px">چاپ و ارسال فاکتور</h3>
+        <p class="hint" style="margin:0">شماره ${esc(invoice.number)} · ${esc(party.name)} · ${money(invoice.grossRial)}</p>
+      </div>
+      <button type="button" class="btn btn-secondary" id="invoicePrintShareClose">بستن</button>
+    </div>
+    <h4 style="margin:16px 0 8px">اندازه کاغذ چاپ</h4>
+    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
+      <button type="button" class="btn btn-primary" data-print-paper="a4">A4</button>
+      <button type="button" class="btn btn-primary" data-print-paper="a5">A5</button>
+      <button type="button" class="btn btn-primary" data-print-paper="roll80">۸ سانتی‌متری</button>
+    </div>
+    <p class="hint" style="margin:8px 0 0">کاغذ ۸ سانتی برای فیش‌پرینتر حرارتی فروشگاهی است.</p>
+    <h4 style="margin:18px 0 8px">ارسال به پیام‌رسان</h4>
+    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">
+      <button type="button" class="btn btn-secondary" data-share-channel="whatsapp">واتساپ</button>
+      <button type="button" class="btn btn-secondary" data-share-channel="telegram">تلگرام</button>
+      <button type="button" class="btn btn-secondary" data-share-channel="rubika">روبیکا (کپی)</button>
+      <button type="button" class="btn btn-secondary" data-share-channel="copy">کپی متن</button>
+      <button type="button" class="btn btn-secondary" data-share-channel="system" style="grid-column:1/-1">اشتراک سیستم (اگر پشتیبانی شود)</button>
+    </div>
+    <p class="hint" style="margin-top:10px">متن خلاصه فاکتور (اقلام و مبلغ نهایی) ارسال می‌شود. برای روبیکا و بعضی اپ‌ها متن کپی می‌شود تا در گفتگو بچسبانید.</p>
+  </div>`;
+  document.body.appendChild(overlay);
+  const close=()=>overlay.remove();
+  overlay.addEventListener('click',ev=>{if(ev.target===overlay)close();});
+  overlay.querySelector('#invoicePrintShareClose')?.addEventListener('click',close);
+  overlay.querySelectorAll<HTMLButtonElement>('[data-print-paper]').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const paper=(btn.dataset.printPaper||'a4') as InvoicePaperSize;
+      const html=buildInvoicePrintHtml(invoice,party,paper);
+      openInvoicePrintWindow(html,paper);
+    });
+  });
+  const text=buildInvoiceShareText(invoice,party);
+  overlay.querySelectorAll<HTMLButtonElement>('[data-share-channel]').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const ch=(btn.dataset.shareChannel||'copy') as 'whatsapp'|'telegram'|'rubika'|'copy'|'system';
+      shareInvoiceText(text,ch,party.phone);
+    });
+  });
+}
+
 function printInvoice(invoiceId:string):void {
-  const invoice=commerce?.invoices.find(i=>i.id===invoiceId); if(!invoice||!commerce)return;
-  const party=commerce.parties.find(p=>p.id===invoice.partyId); if(!party)return;
-  const rows=invoice.lines.map((l,n)=>`<tr><td>${n+1}</td><td>${esc(l.description)}</td><td>${esc(l.unit||'عدد')}</td><td>${fa(l.quantityMilli/1000)}</td><td>${money(l.unitPriceRial)}</td><td>${money(l.discountRial||0)}</td><td>${money(l.totalRial)}</td></tr>`).join('');
-  const w=window.open('','_blank','width=1000,height=800'); if(!w){toast('اجازه بازشدن پنجره چاپ را در مرورگر فعال کنید.','error');return;}
-  w.document.write(`<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><title>فاکتور ${esc(invoice.number)}</title><style>body{font-family:Tahoma,Arial,sans-serif;color:#172033;margin:24px;font-size:12px}h1{font-size:21px;text-align:center;margin:0 0 8px}.muted{color:#667085}.head,.parties,.totals{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}.panel{border:1px solid #cbd5e1;border-radius:8px;padding:12px}.meta{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.meta div{padding:7px;background:#f8fafc;border-radius:5px}table{width:100%;border-collapse:collapse;margin:14px 0}th,td{border:1px solid #cbd5e1;padding:8px;text-align:right}th{background:#f1f5f9}.sum{max-width:420px;margin-right:auto}.sum div{display:flex;justify-content:space-between;padding:7px;border-bottom:1px solid #e2e8f0}.note{white-space:pre-wrap;border:1px dashed #cbd5e1;padding:10px;min-height:35px}.sign{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:55px;text-align:center}.sign div{border-top:1px solid #94a3b8;padding-top:8px}@media print{body{margin:10mm}.noprint{display:none}}</style></head><body><h1>فاکتور ${invoiceTypeTitle(invoice.type)}</h1><div class="muted" style="text-align:center">انبارین پرو</div><div class="head"><div class="panel"><b>مشخصات ${isSaleInvoiceType(invoice.type)?'خریدار':'فروشنده'}</b><p>${esc(party.name)}</p><p>شناسه ملی: ${esc(party.nationalId||'—')} | کد اقتصادی: ${esc(party.economicCode||'—')}</p><p>شماره ثبت: ${esc(party.registrationNumber||'—')}</p><p>تلفن: ${esc(party.phone||'—')} | کد پستی: ${esc(party.postalCode||'—')}</p><p>نشانی: ${esc(party.address||'—')}</p></div><div class="panel meta"><div>شماره فاکتور<br><b>${esc(invoice.number)}</b></div><div>تاریخ<br><b>${esc(invoice.date)}</b></div><div>نوع<br><b>${invoiceTypeTitle(invoice.type)}</b></div><div>وضعیت<br><b>${invoice.status==='posted'?'قطعی':'پیش‌نویس'}</b></div></div></div><table><thead><tr><th>ردیف</th><th>شرح کالا / خدمت</th><th>واحد</th><th>تعداد</th><th>قیمت واحد</th><th>تخفیف</th><th>مبلغ</th></tr></thead><tbody>${rows}</tbody></table><div class="sum"><div><span>جمع پس از تخفیف ردیف‌ها</span><b>${money(invoice.netRial)}</b></div><div><span>مالیات و عوارض (${fa((invoice.taxRateBps||0)/100)}٪)</span><b>${money(invoice.taxRial)}</b></div><div><span>مبلغ نهایی</span><b>${money(invoice.grossRial)}</b></div></div><p>شرح فاکتور: ${esc(invoice.description||'—')}</p><div class="panel" style="margin-top:16px"><b>شرایط پرداخت</b><p>${esc(invoice.paymentTerms||'—')}</p>${invoice.dueDate?`<p>تاریخ سررسید بدهی مدت‌دار: ${esc(invoice.dueDate)}</p>`:''}${(invoice.paymentParts||[]).length?`<ul>${invoice.paymentParts!.map(x=>`<li>${x.method==='cash'?'نقدی':x.method==='card'?'کارت':x.method==='cheque'?`چک ${esc(x.chequeNumber||'')} · ${esc(x.chequeBank||'')} · سررسید ${esc(x.chequeDueDate||'')}`:'اعتباری (مانده بدهی)'}: ${money(x.amountRial)}</li>`).join('')}</ul>`:''}</div><div class="note">توضیحات: ${esc(invoice.notes||'—')}</div><div class="sign"><div>امضا و مهر ${isSaleInvoiceType(invoice.type)?'فروشنده':'خریدار'}</div><div>امضا و مهر ${isSaleInvoiceType(invoice.type)?'خریدار':'فروشنده'}</div></div><button class="noprint" onclick="window.print()">چاپ فاکتور</button></body></html>`);
-  w.document.close(); w.focus();
+  openInvoicePrintShareSheet(invoiceId);
 }
 async function bankPanel():Promise<string>{
   const [balances,recon,accData,reconSum]=await Promise.all([
@@ -1005,7 +1428,7 @@ async function render():Promise<void> {
 </div>
 <div class="invoice-action-bar">
 <button class="btn btn-secondary" id="invoiceSave" type="button">پیش‌نویس</button>
-<button class="btn btn-primary" id="invoiceSettle" type="button" ${activeInvoiceType==='proforma'?'hidden':''}>تسویه</button>
+<button class="btn btn-primary" id="invoiceSettle" type="button" ${activeInvoiceType==='proforma'?'hidden':''}>تسویه درجا</button>
 <button class="btn btn-secondary" id="invoiceCancelEdit" type="button" hidden>لغو</button>
 </div>
 <div class="table-wrap"><table class="data-table"><thead><tr><th>شماره فاکتور</th><th>${activeCommerceSection==='sale'?'مشتری':'تأمین‌کننده'}</th><th>تاریخ</th><th>مبلغ نهایی</th><th>وضعیت</th><th>عملیات</th></tr></thead><tbody>${invoiceRows(activeInvoiceType)}</tbody></table></div></div>
@@ -1033,9 +1456,11 @@ async function render():Promise<void> {
 <label class="field">مبلغ<input id="cashAmount" inputmode="decimal" placeholder="۰"></label>
 <input type="hidden" id="cashAllocation" value="">
 <input type="hidden" id="cashDescription" value="">
-<label class="field" data-cheque-field hidden>شماره چک<input id="cashChequeNumber"></label>
-<label class="field" data-cheque-field hidden>بانک<input id="cashChequeBank"></label>
-<label class="field" data-cheque-field hidden>سررسید چک<input id="cashChequeDue" placeholder="1405/01/30"></label>
+<label class="field" data-cheque-field hidden>شماره چک<input id="cashChequeNumber" placeholder="شماره روی چک"></label>
+<label class="field" data-cheque-field hidden>سریال چک<input id="cashChequeSerial" placeholder="سریال / سری برگه"></label>
+<label class="field" data-cheque-field hidden>شناسه صیادی *<input id="cashChequeSayadi" inputmode="numeric" placeholder="شناسه ۱۶ رقمی صیادی"></label>
+<label class="field" data-cheque-field hidden>بانک<input id="cashChequeBank" placeholder="نام بانک"></label>
+<label class="field" data-cheque-field hidden>سررسید چک<input id="cashChequeDue" placeholder="1405/01/30" inputmode="numeric"></label>
 </div>
 <button class="btn btn-primary" id="cashSave" type="button">ثبت</button>
 <div class="table-wrap" style="margin-top:14px"><table class="data-table"><thead><tr><th>شماره</th><th>نوع</th><th>طرف</th><th>تاریخ</th><th>مبلغ</th><th>وضعیت</th><th></th></tr></thead><tbody>${cashRows()}</tbody></table></div>
@@ -1060,7 +1485,7 @@ async function render():Promise<void> {
     await openCommercePanelSheet(reopenSheet);
   }
 }
-async function persist(next:CommerceData):Promise<void>{commerce=next;await saveCommerceData(next);render()}
+async function persist(next:CommerceData):Promise<void>{commerce=next;await saveCommerceData(next);await render()}
 function refreshAccounting():void{window.dispatchEvent(new Event('accounting:data-updated'))}
 function startInvoiceEdit(invoiceId:string):void {
   if(!commerce)return;
@@ -1287,16 +1712,27 @@ function bind():void {
   el<HTMLButtonElement>('#invoiceSave')?.addEventListener('click',async()=>{await saveInvoiceDraft(false);});
   el<HTMLButtonElement>('#invoiceSettle')?.addEventListener('click',async()=>{
     if(!commerce)return;
-    const number=el<HTMLInputElement>('#invoiceNumber')?.value.trim();
-    let target=commerce.invoices.find(i=>i.number===number&&i.type===activeInvoiceType&&i.status==='draft');
-    if(!target){
+    const settleBtn=el<HTMLButtonElement>('#invoiceSettle');
+    if(settleBtn){settleBtn.disabled=true;settleBtn.textContent='در حال آماده‌سازی...';}
+    try{
+      // همیشه آخرین محتوای فرم ذخیره شود، بعد برگه تسویه باز شود
+      suppressCommerceSheetReopen=true;
       const savedId=await saveInvoiceDraft(true);
-      if(!savedId||!commerce)return;
-      target=commerce.invoices.find(i=>i.id===savedId);
+      suppressCommerceSheetReopen=false;
+      if(!savedId)return;
+      commerce=await loadCommerceData();
+      const target=commerce.invoices.find(i=>i.id===savedId);
+      if(!target){toast('فاکتور برای تسویه آماده نشد.','error');return;}
+      if(target.status!=='draft'){toast('این فاکتور قبلاً قطعی شده است.','error');return;}
+      if(target.type==='proforma'){toast('پیش‌فاکتور قابل تسویه حسابداری نیست.','error');return;}
+      toast('پیش‌نویس ذخیره شد — تسویه را تکمیل کنید.','success');
+      openInvoiceSettlementSheet(target.id);
+    }catch(e){
+      toast(e instanceof Error?e.message:'خطا در آماده‌سازی تسویه','error');
+    }finally{
+      suppressCommerceSheetReopen=false;
+      if(settleBtn){settleBtn.disabled=false;settleBtn.textContent='تسویه درجا';}
     }
-    if(!target){toast('فاکتور برای تسویه آماده نشد.','error');return;}
-    if(target.status!=='draft'){toast('این فاکتور قبلاً قطعی شده است.','error');return;}
-    openInvoiceSettlementSheet(target.id);
   });
   document.querySelectorAll<HTMLElement>('[data-edit-invoice]').forEach(b=>b.addEventListener('click',()=>startInvoiceEdit(b.dataset.editInvoice!)));
   el<HTMLButtonElement>('#invoiceCancelEdit')?.addEventListener('click',cancelInvoiceEdit);
@@ -1306,7 +1742,7 @@ function bind():void {
   el<HTMLSelectElement>('#cashType')?.addEventListener('change',()=>{const type=el<HTMLSelectElement>('#cashType')!.value;el<HTMLSelectElement>('#cashParty')!.innerHTML='<option value="">انتخاب طرف حساب</option>'+partyOptions(type==='receipt'?'customer':'supplier');refreshCashInvoices()});
   el<HTMLSelectElement>('#cashParty')?.addEventListener('change',refreshCashInvoices);
   el<HTMLSelectElement>('#cashMethod')?.addEventListener('change',()=>{const show=el<HTMLSelectElement>('#cashMethod')!.value==='cheque';document.querySelectorAll<HTMLElement>('[data-cheque-field]').forEach(x=>x.hidden=!show)});
-  el<HTMLButtonElement>('#cashSave')?.addEventListener('click',async()=>{if(!commerce)return;try{const type=el<HTMLSelectElement>('#cashType')!.value as 'receipt'|'payment';const result=await createCashTransaction({type,number:el<HTMLInputElement>('#cashNumber')!.value,date:digits(el<HTMLInputElement>('#cashDate')!.value),fiscalPeriodId:await activeFiscalPeriodId(),partyId:el<HTMLSelectElement>('#cashParty')!.value,cashAccountId:el<HTMLSelectElement>('#cashAccount')!.value,amountRial:parseMoneyToRial(digits(el<HTMLInputElement>('#cashAmount')!.value),currency),description:el<HTMLInputElement>('#cashDescription')!.value,method:el<HTMLSelectElement>('#cashMethod')!.value as any,allocations:el<HTMLSelectElement>('#cashInvoice')!.value?[{invoiceId:el<HTMLSelectElement>('#cashInvoice')!.value,amountRial:parseMoneyToRial(digits(el<HTMLInputElement>('#cashAllocation')!.value||el<HTMLInputElement>('#cashAmount')!.value),currency)}]:[],chequeNumber:el<HTMLInputElement>('#cashChequeNumber')!.value,chequeBank:el<HTMLInputElement>('#cashChequeBank')!.value,chequeDueDate:digits(el<HTMLInputElement>('#cashChequeDue')!.value)},commerce);commerce=result.commerce;await saveCommerceData(commerce);render();refreshAccounting();toast('دریافت/پرداخت و سند حسابداری ثبت شد','success')}catch(e){toast(e instanceof Error?e.message:'خطا در ثبت دریافت/پرداخت','error')}});
+  el<HTMLButtonElement>('#cashSave')?.addEventListener('click',async()=>{if(!commerce)return;try{const type=el<HTMLSelectElement>('#cashType')!.value as 'receipt'|'payment';const result=await createCashTransaction({type,number:el<HTMLInputElement>('#cashNumber')!.value,date:digits(el<HTMLInputElement>('#cashDate')!.value),fiscalPeriodId:await activeFiscalPeriodId(),partyId:el<HTMLSelectElement>('#cashParty')!.value,cashAccountId:el<HTMLSelectElement>('#cashAccount')!.value,amountRial:parseMoneyToRial(digits(el<HTMLInputElement>('#cashAmount')!.value),currency),description:el<HTMLInputElement>('#cashDescription')!.value,method:el<HTMLSelectElement>('#cashMethod')!.value as any,allocations:el<HTMLSelectElement>('#cashInvoice')!.value?[{invoiceId:el<HTMLSelectElement>('#cashInvoice')!.value,amountRial:parseMoneyToRial(digits(el<HTMLInputElement>('#cashAllocation')!.value||el<HTMLInputElement>('#cashAmount')!.value),currency)}]:[],chequeNumber:el<HTMLInputElement>('#cashChequeNumber')!.value,chequeSerial:el<HTMLInputElement>('#cashChequeSerial')?.value||'',chequeSayadi:digits(el<HTMLInputElement>('#cashChequeSayadi')?.value||''),chequeBank:el<HTMLInputElement>('#cashChequeBank')!.value,chequeDueDate:digits(el<HTMLInputElement>('#cashChequeDue')!.value)},commerce);commerce=result.commerce;await saveCommerceData(commerce);render();refreshAccounting();toast('دریافت/پرداخت و سند حسابداری ثبت شد','success')}catch(e){toast(e instanceof Error?e.message:'خطا در ثبت دریافت/پرداخت','error')}});
   document.querySelectorAll<HTMLElement>('[data-cheque-clear]').forEach(b=>b.addEventListener('click',async()=>{if(!commerce)return;try{const date=prompt('تاریخ وصول/تسویه شمسی را وارد کنید (مثلاً ۱۴۰۵/۰۱/۳۰):');if(!date)return;const result=await updateChequeStatus(b.dataset.chequeClear!,'cleared',digits(date),commerce);commerce=result.commerce;await recordChequeEvent(b.dataset.chequeClear!,'cleared_note',digits(date),'وصول/تسویه با سند حسابداری');render();refreshAccounting();toast('وصول/تسویه چک ثبت شد','success')}catch(e){toast(e instanceof Error?e.message:'خطا در تسویه چک','error')}}));
   document.querySelectorAll<HTMLElement>('[data-cheque-bounce]').forEach(b=>b.addEventListener('click',async()=>{if(!commerce)return;try{const date=prompt('تاریخ برگشت چک شمسی را وارد کنید:');if(!date)return;const result=await updateChequeStatus(b.dataset.chequeBounce!,'bounced',digits(date),commerce);commerce=result.commerce;const reason=prompt('علت برگشت چک:')||'علت اعلام نشده';await recordChequeEvent(b.dataset.chequeBounce!,'bounced_note',digits(date),reason);render();refreshAccounting();toast('برگشت چک و اثر حسابداری ثبت شد','success')}catch(e){toast(e instanceof Error?e.message:'خطا در ثبت برگشت چک','error')}}));
 

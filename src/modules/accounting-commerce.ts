@@ -21,7 +21,7 @@ export interface AccountingParty {
 export interface CommercialInvoiceLine {
   id: string; description: string; quantityMilli: number; unitPriceRial: number; totalRial: number; productId?: string; warehouse?: string; unit?: string; discountRial?: number;
 }
-export interface InvoicePaymentPart { method:'cash'|'card'|'cheque'|'credit'; amountRial:number; chequeNumber?:string; chequeBank?:string; chequeAccount?:string; chequeDueDate?:string; note?:string; }
+export interface InvoicePaymentPart { method:'cash'|'card'|'cheque'|'credit'; amountRial:number; chequeNumber?:string; chequeBank?:string; chequeAccount?:string; chequeSerial?:string; chequeSayadi?:string; chequeDueDate?:string; note?:string; }
 export interface CommercialInvoice {
   id: string; type: InvoiceType; number: string; date: string; fiscalPeriodId: string; partyId: string;
   description: string; lines: CommercialInvoiceLine[]; netRial: number; taxRial: number; grossRial: number; taxRateBps?: number;
@@ -36,7 +36,7 @@ export interface CashTransaction {
   partyId: string; cashAccountId: string; amountRial: number; description: string;
   journalEntryId: string; createdAt: string;
   method?: SettlementMethod; allocations?: InvoiceAllocation[];
-  chequeNumber?: string; chequeBank?: string; chequeAccount?:string; chequeNote?:string; chequeDueDate?: string; chequeStatus?: ChequeStatus;
+  chequeNumber?: string; chequeBank?: string; chequeAccount?:string; chequeSerial?:string; chequeSayadi?:string; chequeNote?:string; chequeDueDate?: string; chequeStatus?: ChequeStatus;
   clearingJournalEntryId?: string;
 }
 export interface ChequeEndorsement { id:string; transactionId:string; toPartyId:string; invoiceId:string; date:string; amountRial:number; note:string; journalEntryId:string; createdAt:string; }
@@ -252,7 +252,21 @@ export function buildInvoice(input: {
   if (input.taxRateBps !== undefined && (!Number.isSafeInteger(input.taxRateBps) || input.taxRateBps < 0 || input.taxRateBps > 10000)) throw new Error('نرخ مالیات باید بین صفر تا صد درصد باشد.');
   if (input.dueDate && !/^\d{4}\/\d{2}\/\d{2}$/.test(input.dueDate)) throw new Error('تاریخ سررسید باید به شکل سال/ماه/روز شمسی باشد.');
   if (input.dueDate && input.dueDate < input.date) throw new Error('تاریخ سررسید نمی‌تواند قبل از تاریخ فاکتور باشد.');
-  const paymentParts=(input.paymentParts||[]).map(part=>{if(!['cash','card','cheque','credit'].includes(part.method)||!isSafeMoney(part.amountRial)||part.amountRial<=0)throw new Error('روش یا مبلغ یکی از بخش‌های پرداخت معتبر نیست.');if(part.method==='cheque'){if(!part.chequeNumber?.trim()||!part.chequeBank?.trim()||!part.chequeDueDate||!/^\d{4}\/\d{2}\/\d{2}$/.test(part.chequeDueDate))throw new Error('برای هر چک، مبلغ، شماره چک، بانک و تاریخ سررسید معتبر الزامی است.');if(part.chequeDueDate<input.date)throw new Error('سررسید چک نمی‌تواند قبل از تاریخ فاکتور باشد.');}return {...part};});
+  const paymentParts=(input.paymentParts||[]).map(part=>{
+    if(!['cash','card','cheque','credit'].includes(part.method)||!isSafeMoney(part.amountRial)||part.amountRial<=0)
+      throw new Error('روش یا مبلغ یکی از بخش‌های پرداخت معتبر نیست.');
+    if(part.method==='cheque'){
+      if(!part.chequeNumber?.trim()||!part.chequeBank?.trim()||!part.chequeDueDate||!/^\d{4}\/\d{2}\/\d{2}$/.test(part.chequeDueDate))
+        throw new Error('برای هر چک، شماره چک، بانک و تاریخ سررسید معتبر الزامی است.');
+      const sayadi=(part.chequeSayadi||part.chequeAccount||'').replace(/\D/g,'');
+      if(!sayadi||sayadi.length<6)
+        throw new Error('شناسه صیادی چک الزامی است (حداقل ۶ رقم).');
+      if(part.chequeDueDate<input.date)
+        throw new Error('سررسید چک نمی‌تواند قبل از تاریخ فاکتور باشد.');
+      return {...part, chequeSayadi:sayadi, chequeAccount:part.chequeAccount||sayadi, chequeSerial:(part.chequeSerial||'').trim()};
+    }
+    return {...part};
+  });
   const allocatedPayments=paymentParts.reduce((sum,x)=>sum+x.amountRial,0);
   if(allocatedPayments>grossRial)throw new Error('جمع پرداخت‌ها نباید از مبلغ نهایی فاکتور بیشتر شود.');
   if(input.type!=='proforma'&&(allocatedPayments<grossRial||paymentParts.some(x=>x.method==='credit'))&&!input.dueDate)throw new Error('برای مانده اعتباری/مدت‌دار، تاریخ سررسید را در بخش شرایط پرداخت وارد کنید.');
@@ -341,7 +355,7 @@ async function postInvoiceExclusive(invoiceId: string, commerce: CommerceData): 
 export async function createCashTransaction(input: {
   type:'receipt'|'payment'; number:string; date:string; fiscalPeriodId:string; partyId:string;
   cashAccountId:string; amountRial:number; description:string; method?:SettlementMethod;
-  allocations?:InvoiceAllocation[]; chequeNumber?:string; chequeBank?:string; chequeAccount?:string; chequeNote?:string; chequeDueDate?:string;
+  allocations?:InvoiceAllocation[]; chequeNumber?:string; chequeBank?:string; chequeAccount?:string; chequeSerial?:string; chequeSayadi?:string; chequeNote?:string; chequeDueDate?:string;
 }, commerce:CommerceData):Promise<{commerce:CommerceData;accounting:AccountingData}> {
   return withCommerceMutationLock(() => createCashTransactionExclusive(input, commerce));
 }
@@ -349,7 +363,7 @@ export async function createCashTransaction(input: {
 async function createCashTransactionExclusive(input: {
   type:'receipt'|'payment'; number:string; date:string; fiscalPeriodId:string; partyId:string;
   cashAccountId:string; amountRial:number; description:string; method?:SettlementMethod;
-  allocations?:InvoiceAllocation[]; chequeNumber?:string; chequeBank?:string; chequeAccount?:string; chequeNote?:string; chequeDueDate?:string;
+  allocations?:InvoiceAllocation[]; chequeNumber?:string; chequeBank?:string; chequeAccount?:string; chequeSerial?:string; chequeSayadi?:string; chequeNote?:string; chequeDueDate?:string;
 }, originalCommerce:CommerceData):Promise<{commerce:CommerceData;accounting:AccountingData}> {
   const persisted = await loadCommerceData();
   const activeCommerce = persisted.cashTransactions.length || persisted.invoices.length || persisted.parties.length ? persisted : originalCommerce;
@@ -369,6 +383,9 @@ async function createCashTransactionExclusive(input: {
     requireAccount(accounting,input.cashAccountId,'صندوق/بانک مقصد یا مبدأ برای تسویه چک');
     requireAccount(accounting,input.type==='receipt'?'det-cheques-receivable':'det-cheques-payable','اسناد چک');
     if(!input.chequeNumber?.trim()||!input.chequeBank?.trim()||!input.chequeDueDate||!/^[0-9]{4}\/[0-9]{2}\/[0-9]{2}$/.test(input.chequeDueDate)) throw new Error('شماره چک، بانک و تاریخ سررسید معتبر الزامی است.');
+    const sayadi=(input.chequeSayadi||input.chequeAccount||'').replace(/\D/g,'');
+    if(!sayadi||sayadi.length<6) throw new Error('شناسه صیادی چک الزامی است (حداقل ۶ رقم).');
+    input={...input, chequeSayadi:sayadi, chequeAccount:input.chequeAccount||sayadi};
     if(input.chequeDueDate<input.date) throw new Error('سررسید چک نمی‌تواند قبل از تاریخ دریافت/پرداخت باشد.');
     const normalizedCheque=input.chequeNumber!.trim(); const normalizedBank=input.chequeBank!.trim().toLocaleLowerCase();
     if(activeCommerce.cashTransactions.some(t=>t.method==='cheque'&&t.chequeStatus!=='void'&&t.chequeNumber?.trim()===normalizedCheque&&(t.chequeBank||'').trim().toLocaleLowerCase()===normalizedBank)) throw new Error('این شماره چک با همین بانک قبلاً در سوابق چک ثبت شده است.');
@@ -392,7 +409,7 @@ async function createCashTransactionExclusive(input: {
     : [journalLine(partyAccount,'تسویه حساب طرف حساب',input.amountRial,0,party.id),journalLine(instrumentAccount,isCheque?'چک پرداختنی':'پرداخت وجه',0,input.amountRial)];
   const id=makeId(input.type); const entry=journalBase(id,input.type==='receipt'?'R':'P',input.fiscalPeriodId,input.date,input.description||(input.type==='receipt'?'دریافت از مشتری':'پرداخت به تأمین‌کننده'),input.type,lines);
   const journalEntryId=await persistPostedJournal(accounting,entry);
-  const tx:CashTransaction={id,type:input.type,number:input.number.trim(),date:input.date,fiscalPeriodId:input.fiscalPeriodId,partyId:party.id,cashAccountId:input.cashAccountId,amountRial:input.amountRial,description:input.description.trim(),journalEntryId,createdAt:now(),method,allocations,...(isCheque?{chequeNumber:input.chequeNumber!.trim(),chequeBank:input.chequeBank!.trim(),chequeAccount:(input.chequeAccount||'').trim(),chequeNote:(input.chequeNote||'').trim(),chequeDueDate:input.chequeDueDate,chequeStatus:'pending' as const}:{})};
+  const tx:CashTransaction={id,type:input.type,number:input.number.trim(),date:input.date,fiscalPeriodId:input.fiscalPeriodId,partyId:party.id,cashAccountId:input.cashAccountId,amountRial:input.amountRial,description:input.description.trim(),journalEntryId,createdAt:now(),method,allocations,...(isCheque?{chequeNumber:input.chequeNumber!.trim(),chequeBank:input.chequeBank!.trim(),chequeAccount:(input.chequeAccount||input.chequeSayadi||'').trim(),chequeSerial:(input.chequeSerial||'').trim(),chequeSayadi:(input.chequeSayadi||input.chequeAccount||'').replace(/\D/g,''),chequeNote:(input.chequeNote||'').trim(),chequeDueDate:input.chequeDueDate,chequeStatus:'pending' as const}:{})};
   const next={...activeCommerce,cashTransactions:[...activeCommerce.cashTransactions,tx]}; await saveCommerceData(next);
   return {commerce:next,accounting:await loadAccountingData()};
 }

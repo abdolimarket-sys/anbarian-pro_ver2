@@ -11,6 +11,7 @@ import { loadInventoryCostData, saveInventoryCostData } from './inventory-costin
 import { downloadFile, dateStr } from '@/utils/helpers';
 import { toast } from './ui';
 import { enhanceDateFields } from './date-picker';
+import { ensureReportsUIReady } from './accounting-reports';
 
 let data: AccountingData | null = null;
 let activeAccountingTab: string | null = null;
@@ -89,6 +90,8 @@ function openAccountingModuleSheet(tabId: string): void {
   } else if (tabId === 'reports' && reports) {
     reports.hidden = false;
     mount.appendChild(reports);
+    // اتصال مجدد دکمه‌های فهرست و تهیه گزارش
+    try { void ensureReportsUIReady(); } catch (e) { console.warn('[Anbarin] reports ready failed', e); }
   } else {
     const section = el<HTMLElement>(`#accountingModuleHost [data-acc-section="${tabId}"]`)
       || document.querySelector<HTMLElement>(`[data-acc-section="${tabId}"]`);

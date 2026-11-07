@@ -2264,3 +2264,14 @@ input[placeholder*="140"], input[placeholder*="14"] {
 #scannerModal[style*="flex"] {
   z-index: 10300 !important;
 }
+
+/* پنل شناور تقویم روی body */
+#anbarinJalaliCalendarPanel.anbarin-jalali-floating {
+  position: fixed !important;
+  z-index: 11000 !important;
+  max-width: 320px;
+}
+/* پنل قدیمی داخل فرم دیگر استفاده نمی‌شود */
+#invoiceJalaliCalendarPanel:not(.anbarin-jalali-floating) {
+  display: none !important;
+}
