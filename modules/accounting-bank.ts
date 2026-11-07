@@ -23,3 +23,110 @@ export function parseBankStatementCsv(text:string,accountId:string):BankStatemen
 export async function importBankStatement(rows:BankStatementRow[]):Promise<{imported:number;matched:number}>{const a=await loadAccountingData();for(const r of rows)bankAccount(a,r.accountId);const data=await loadBankReconciliation();const known=new Set(data.rows.map(r=>`${r.accountId}|${r.date}|${r.amountRial}|${r.reference}`));const commerce=await idbGet<any>('accounting_phase22_commerce');let matched=0,imported=0;const usedTransactions=new Set(data.rows.filter(r=>r.matchedTransactionId).map(r=>r.matchedTransactionId));for(const r of rows){const key=`${r.accountId}|${r.date}|${r.amountRial}|${r.reference}`;if(known.has(key))continue;const candidates=(commerce?.cashTransactions||[]).filter((t:any)=>t.cashAccountId===r.accountId&&t.date===r.date&&((t.type==='receipt'?1:-1)*t.amountRial)===r.amountRial);const eligible=candidates.filter((t:any)=>(t.method!=='cheque'||t.chequeStatus==='cleared')&&!usedTransactions.has(t.id));if(eligible.length===1){r.matched=true;r.matchedTransactionId=eligible[0].id;usedTransactions.add(eligible[0].id);matched++;}data.rows.push(r);known.add(key);imported++;}await saveBankReconciliation(data);logAudit('bank_statement_imported',{rows:rows.length,matched});return {imported,matched};}
 export async function matchStatementRow(rowId:string,transactionId:string):Promise<void>{const data=await loadBankReconciliation();const row=data.rows.find(x=>x.id===rowId);if(!row)throw new Error('ردیف صورت‌حساب پیدا نشد.');const commerce=await idbGet<any>('accounting_phase22_commerce');const tx=(commerce?.cashTransactions||[]).find((x:any)=>x.id===transactionId);if(!tx||tx.cashAccountId!==row.accountId||tx.date!==row.date||((tx.type==='receipt'?1:-1)*tx.amountRial)!==row.amountRial)throw new Error('تراکنش انتخابی از نظر حساب، تاریخ یا مبلغ با ردیف بانکی تطبیق ندارد.');if(data.rows.some(x=>x.id!==rowId&&x.matchedTransactionId===transactionId))throw new Error('این تراکنش قبلاً با ردیف دیگری تطبیق داده شده است.');row.matched=true;row.matchedTransactionId=transactionId;await saveBankReconciliation(data);logAudit('bank_statement_row_matched',{rowId,transactionId});}
 export async function getBankAccountBalances():Promise<Array<{id:string;code:string;title:string;balanceRial:number}>>{const a=await loadAccountingData();return a.accounts.filter(x=>x.isActive&&x.level==='detail'&&(['det-cash','det-bank'].includes(x.id)||/(بانک|صندوق|تنخواه)/.test(x.title))).map(x=>({id:x.id,code:x.code,title:x.title,balanceRial:a.journalEntries.filter(j=>j.status==='posted').flatMap(j=>j.lines).filter(l=>l.accountId===x.id).reduce((s,l)=>s+l.debitRial-l.creditRial,0)}));}
+
+/** واریز نقد به بانک یا برداشت از بانک به صندوق */
+export async function createCashBankMove(input:{
+  kind:'deposit'|'withdraw';
+  number:string;
+  date:string;
+  fiscalPeriodId:string;
+  cashAccountId:string;
+  bankAccountId:string;
+  amountRial:number;
+  description?:string;
+}):Promise<void>{
+  const a=await loadAccountingData();
+  validatePeriod(input.date,input.fiscalPeriodId,a);
+  if(!input.number.trim())throw new Error('شماره سند الزامی است.');
+  if(!moneyOk(input.amountRial))throw new Error('مبلغ باید عدد صحیح و بیشتر از صفر باشد.');
+  if(input.cashAccountId===input.bankAccountId)throw new Error('حساب صندوق و بانک باید متفاوت باشند.');
+  const cash=bankAccount(a,input.cashAccountId);
+  const bank=bankAccount(a,input.bankAccountId);
+  const isDeposit=input.kind==='deposit';
+  const desc=input.description?.trim()||(isDeposit?`واریز نقد به بانک ${input.number}`:`برداشت از بانک به صندوق ${input.number}`);
+  const lines=isDeposit
+    ?[line(bank.id,desc,input.amountRial,0),line(cash.id,desc,0,input.amountRial)]
+    :[line(cash.id,desc,input.amountRial,0),line(bank.id,desc,0,input.amountRial)];
+  const id=uid(`bank-${input.kind}`);
+  const entry:JournalEntry={
+    id:uid('je'),number:`${isDeposit?'BD':'BW'}-${input.number.trim()}`,
+    fiscalPeriodId:input.fiscalPeriodId,date:input.date,description:desc,
+    status:'draft',source:'manual',sourceDocumentId:id,lines,createdAt:now(),updatedAt:now()
+  };
+  const posted=postJournalEntry(upsertJournalEntry(a,entry),entry.id);
+  await saveAccountingData(posted);
+  logAudit(isDeposit?'bank_cash_deposit':'bank_cash_withdraw',{id,amountRial:input.amountRial,cash:cash.id,bank:bank.id});
+}
+
+/** ثبت کارمزد بانکی مستقل */
+export async function createBankFee(input:{
+  number:string;
+  date:string;
+  fiscalPeriodId:string;
+  bankAccountId:string;
+  feeAccountId:string;
+  amountRial:number;
+  description?:string;
+}):Promise<void>{
+  const a=await loadAccountingData();
+  validatePeriod(input.date,input.fiscalPeriodId,a);
+  if(!input.number.trim())throw new Error('شماره سند الزامی است.');
+  if(!moneyOk(input.amountRial))throw new Error('مبلغ کارمزد معتبر نیست.');
+  const bank=bankAccount(a,input.bankAccountId);
+  const feeAcc=a.accounts.find(x=>x.id===input.feeAccountId&&x.isActive&&x.level==='detail');
+  if(!feeAcc)throw new Error('حساب هزینه کارمزد فعال و تفصیلی انتخاب کنید.');
+  const desc=input.description?.trim()||`کارمزد بانکی ${input.number}`;
+  const lines=[line(feeAcc.id,desc,input.amountRial,0),line(bank.id,desc,0,input.amountRial)];
+  const id=uid('bank-fee');
+  const entry:JournalEntry={
+    id:uid('je'),number:`BF-${input.number.trim()}`,
+    fiscalPeriodId:input.fiscalPeriodId,date:input.date,description:desc,
+    status:'draft',source:'manual',sourceDocumentId:id,lines,createdAt:now(),updatedAt:now()
+  };
+  const posted=postJournalEntry(upsertJournalEntry(a,entry),entry.id);
+  await saveAccountingData(posted);
+  logAudit('bank_fee_posted',{id,amountRial:input.amountRial,bank:bank.id,fee:feeAcc.id});
+}
+
+/** گردش دفتر بانک/صندوق از اسناد قطعی */
+export async function getBankAccountLedger(accountId:string,from?:string,to?:string):Promise<Array<{
+  date:string;number:string;description:string;debitRial:number;creditRial:number;balanceRial:number;
+}>>{
+  const a=await loadAccountingData();
+  bankAccount(a,accountId);
+  let balance=0;
+  const rows:Array<{date:string;number:string;description:string;debitRial:number;creditRial:number;balanceRial:number}>=[];
+  const entries=a.journalEntries
+    .filter(j=>j.status==='posted'&&(!from||j.date>=from)&&(!to||j.date<=to))
+    .sort((x,y)=>x.date.localeCompare(y.date)||x.number.localeCompare(y.number,'en'));
+  for(const e of entries){
+    for(const l of e.lines.filter(x=>x.accountId===accountId)){
+      balance+=l.debitRial-l.creditRial;
+      rows.push({
+        date:e.date,number:e.number,
+        description:l.description||e.description,
+        debitRial:l.debitRial,creditRial:l.creditRial,balanceRial:balance
+      });
+    }
+  }
+  return rows;
+}
+
+/** خلاصه مغایرت‌گیری صورت‌حساب بانکی */
+export async function getBankReconciliationSummary(accountId?:string):Promise<{
+  totalRows:number;matched:number;unmatched:number;
+  bankInflowRial:number;bankOutflowRial:number;
+  bookBalanceRial:number;unmatchedBankRial:number;
+}>{
+  const [data,balances]=await Promise.all([loadBankReconciliation(),getBankAccountBalances()]);
+  const rows=accountId?data.rows.filter(r=>r.accountId===accountId):data.rows;
+  const matched=rows.filter(r=>r.matched).length;
+  const unmatched=rows.length-matched;
+  const bankInflowRial=rows.filter(r=>r.amountRial>0).reduce((s,r)=>s+r.amountRial,0);
+  const bankOutflowRial=rows.filter(r=>r.amountRial<0).reduce((s,r)=>s+Math.abs(r.amountRial),0);
+  const bookBalanceRial=accountId
+    ?(balances.find(b=>b.id===accountId)?.balanceRial||0)
+    :balances.reduce((s,b)=>s+b.balanceRial,0);
+  const unmatchedBankRial=rows.filter(r=>!r.matched).reduce((s,r)=>s+r.amountRial,0);
+  return {totalRows:rows.length,matched,unmatched,bankInflowRial,bankOutflowRial,bookBalanceRial,unmatchedBankRial};
+}

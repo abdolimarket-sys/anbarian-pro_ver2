@@ -108,6 +108,8 @@ export function openScanner(options?: {
     modal.classList.add('show');
     // Keep compatibility with the app's existing modal implementation.
     modal.style.display = 'flex';
+    // بالاتر از برگه فاکتور / اقلام / تعریف کالا (۱۰۱۲۰–۱۰۲۰۰)
+    modal.style.zIndex = '10300';
   }
 
   void startCamera(generation);
@@ -124,6 +126,17 @@ export function closeScanner(): void {
   if (modal) {
     modal.classList.remove('show');
     modal.style.display = 'none';
+    modal.style.zIndex = '';
+  }
+
+  // پایان حالت اسکن فاکتور و بازگرداندن تنظیم پیوسته قبلی
+  const wasInvoice = !!(window as any).__anbarinInvoiceScanActive;
+  (window as any).__anbarinInvoiceScanActive = false;
+  if (wasInvoice) {
+    const continuous = document.getElementById('scannerContinuous') as HTMLInputElement | null;
+    const before = (window as any).__anbarinScannerContinuousBeforeInvoice;
+    if (continuous && typeof before === 'boolean') continuous.checked = before;
+    delete (window as any).__anbarinScannerContinuousBeforeInvoice;
   }
 }
 
