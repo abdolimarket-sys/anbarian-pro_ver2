@@ -382,11 +382,12 @@ async function createCashTransactionExclusive(input: {
   else {
     requireAccount(accounting,input.cashAccountId,'صندوق/بانک مقصد یا مبدأ برای تسویه چک');
     requireAccount(accounting,input.type==='receipt'?'det-cheques-receivable':'det-cheques-payable','اسناد چک');
-    if(!input.chequeNumber?.trim()||!input.chequeBank?.trim()||!input.chequeDueDate||!/^[0-9]{4}\/[0-9]{2}\/[0-9]{2}$/.test(input.chequeDueDate)) throw new Error('شماره چک، بانک و تاریخ سررسید معتبر الزامی است.');
+    const chequeDueDate=input.chequeDueDate;
+    if(!input.chequeNumber?.trim()||!input.chequeBank?.trim()||!chequeDueDate||!/^[0-9]{4}\/[0-9]{2}\/[0-9]{2}$/.test(chequeDueDate)) throw new Error('شماره چک، بانک و تاریخ سررسید معتبر الزامی است.');
     const sayadi=(input.chequeSayadi||input.chequeAccount||'').replace(/\D/g,'');
     if(!sayadi||sayadi.length<6) throw new Error('شناسه صیادی چک الزامی است (حداقل ۶ رقم).');
     input={...input, chequeSayadi:sayadi, chequeAccount:input.chequeAccount||sayadi};
-    if(input.chequeDueDate<input.date) throw new Error('سررسید چک نمی‌تواند قبل از تاریخ دریافت/پرداخت باشد.');
+    if(chequeDueDate<input.date) throw new Error('سررسید چک نمی‌تواند قبل از تاریخ دریافت/پرداخت باشد.');
     const normalizedCheque=input.chequeNumber!.trim(); const normalizedBank=input.chequeBank!.trim().toLocaleLowerCase();
     if(activeCommerce.cashTransactions.some(t=>t.method==='cheque'&&t.chequeStatus!=='void'&&t.chequeNumber?.trim()===normalizedCheque&&(t.chequeBank||'').trim().toLocaleLowerCase()===normalizedBank)) throw new Error('این شماره چک با همین بانک قبلاً در سوابق چک ثبت شده است.');
   }
