@@ -118,8 +118,12 @@ async function savePartyFromForm(selectInInvoice=false):Promise<AccountingParty|
     if(selectInInvoice){
       const sel=el<HTMLSelectElement>('#invoiceParty');
       if(sel){
-        sel.innerHTML='<option value="">انتخاب</option>'+partyOptions(isSaleInvoiceType(activeInvoiceType)?'customer':'supplier');
+        sel.innerHTML='<option value="">انتخاب طرف حساب</option>'+partyOptions(isSaleInvoiceType(activeInvoiceType)?'customer':'supplier');
         sel.value=saved.id;
+        if(sel.value!==saved.id){
+          const option=document.createElement('option'); option.value=saved.id; option.textContent=saved.name; sel.appendChild(option); sel.value=saved.id;
+        }
+        sel.dispatchEvent(new Event('change',{bubbles:true}));
       }
       const cashSel=el<HTMLSelectElement>('#cashParty');
       if(cashSel){
@@ -149,14 +153,15 @@ function openPartyFormSheet(opts?:{preferType?:'customer'|'supplier'|'both'; sel
   if(opts?.prefillName){const n=overlay.querySelector<HTMLInputElement>('#partyName');if(n)n.value=opts.prefillName;}
   const close=(clearEdit=true)=>{overlay.remove();if(clearEdit)editingPartyId=null;};
   overlay.querySelector('#partySheetClose')?.addEventListener('click',()=>close(true));
-  overlay.querySelector('#partySaveBtn')?.addEventListener('click',async()=>{
+  overlay.querySelector<HTMLButtonElement>('#partySaveBtn')?.addEventListener('click',async()=>{
+    const saveButton=overlay.querySelector<HTMLButtonElement>('#partySaveBtn');
+    if(saveButton){saveButton.disabled=true;saveButton.textContent='در حال ذخیره…';}
     const saved=await savePartyFromForm(!!opts?.selectAfterSave);
-    if(saved){
-      close(true);
-      // در مسیر افزودن شخص از داخل فاکتور، فرم فاکتور را دوباره render نکن؛
-      // چون با ساخت مجدد DOM انتخاب تازهٔ طرف‌حساب از بین می‌رود.
-      if(!opts?.selectAfterSave) await render();
-    }
+    if(saveButton){saveButton.disabled=false;saveButton.textContent=editingPartyId?'ذخیره تغییرات':'ثبت شخص جدید';}
+    if(!saved)return;
+    close(true);
+    // هنگام ایجاد شخص از داخل فاکتور، DOM فاکتور را بازسازی نکن؛ انتخاب تازه حفظ شود.
+    if(!opts?.selectAfterSave) await render();
   });
   overlay.querySelector('#partyResetBtn')?.addEventListener('click',()=>{editingPartyId=null;close(true);openPartyFormSheet(opts);});
   overlay.querySelectorAll<HTMLButtonElement>('[data-edit-party]').forEach(btn=>btn.addEventListener('click',()=>{
@@ -1311,56 +1316,50 @@ function bindInvoiceProductSearch(root:ParentNode=document):void {
 }
 
 function openInvoiceItemsSheet():void {
-  const scope = document.getElementById('commercePanelSheet') || document.getElementById('accountingCommerceWorkspace') || document;
-  const placeholder = (scope.querySelector('#invoiceItemsPlaceholder') || document.querySelector('#invoiceItemsPlaceholder')) as HTMLElement | null;
-  if (!placeholder) { toast('فرم فاکتور هنوز آماده نیست.', 'error'); return; }
+  const panel=document.getElementById('commercePanelSheet');
+  const scope:ParentNode=panel||document.getElementById('accountingCommerceWorkspace')||document;
+  const placeholder=scope.querySelector<HTMLElement>('#invoiceItemsPlaceholder')
+    ||document.querySelector<HTMLElement>('#invoiceItemsPlaceholder');
+  if(!placeholder){toast('فرم فاکتور هنوز آماده نیست؛ یک‌بار از فاکتور خارج شوید و دوباره وارد شوید.','error');return;}
   document.getElementById('invoiceItemsSheet')?.remove();
-  const overlay = document.createElement('div');
-  overlay.id = 'invoiceItemsSheet';
-  overlay.dir = 'rtl';
-  overlay.style.cssText = 'position:fixed;inset:0;z-index:10120;background:var(--surface,#fff);color:var(--text,#222);overflow:auto;padding:clamp(12px,3vw,28px)';
-  overlay.innerHTML = `<div style="max-width:1100px;margin:0 auto"><div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2>اقلام فاکتور</h2><button type="button" class="btn btn-primary" id="invoiceItemsBack">تأیید اقلام و بازگشت به فاکتور</button></div><div id="invoiceItemsMount" style="margin-top:14px"></div></div>`;
+  const overlay=document.createElement('div');
+  overlay.id='invoiceItemsSheet'; overlay.dir='rtl';
+  overlay.style.cssText='position:fixed;inset:0;z-index:10120;background:var(--surface,#fff);color:var(--text,#222);overflow:auto;padding:clamp(12px,3vw,28px)';
+  overlay.innerHTML=`<div class="invoice-items-sheet-inner" style="max-width:1100px;margin:0 auto"><div class="invoice-items-sheet-head" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap"><h2>اقلام فاکتور</h2><button type="button" class="btn btn-primary" id="invoiceItemsBack">تأیید اقلام و بازگشت به فاکتور</button></div><div id="invoiceItemsMount" style="margin-top:14px"></div></div>`;
   document.body.appendChild(overlay);
-  const mount = overlay.querySelector<HTMLElement>('#invoiceItemsMount')!;
-  const pick = (sel: string) => (scope.querySelector(sel) || document.querySelector(sel)) as HTMLElement | null;
-  ['.commerce-lines-head', '.invoice-product-tools', '#commerceInvoiceLines', '#invoiceAddLine'].forEach(sel => {
-    const node = pick(sel);
-    if (node) mount.appendChild(node);
+  const mount=overlay.querySelector<HTMLElement>('#invoiceItemsMount')!;
+  const selectors=['.commerce-lines-head','.invoice-product-tools','#commerceInvoiceLines','#invoiceAddLine'];
+  // گره‌های واقعی را منتقل می‌کنیم تا مقادیر و event handlerها از بین نروند.
+  selectors.forEach(selector=>{
+    const node=placeholder.querySelector<HTMLElement>(selector);
+    if(node)mount.appendChild(node);
   });
-  // پرچم جستجو را پاک کن تا دوباره وصل شود
-  const search = mount.querySelector<HTMLInputElement>('#invoiceProductSearch');
-  if (search) delete search.dataset.searchBound;
-
-  if (!mount.querySelector('#commerceInvoiceLines .commerce-line')) {
-    addInvoiceLine();
-  }
-
+  const search=mount.querySelector<HTMLInputElement>('#invoiceProductSearch');
+  if(search)delete search.dataset.searchBound;
+  const lines=mount.querySelector<HTMLElement>('#commerceInvoiceLines');
+  if(lines&&!lines.querySelector('.commerce-line'))addInvoiceLine();
   bindInvoiceProductSearch(mount);
+  if(search){search.placeholder='نام کالا یا بارکد را وارد کنید';search.focus({preventScroll:true});}
 
-  if (search) {
-    search.placeholder = 'نام کالا یا بارکد — جستجو کنید';
-    search.focus({ preventScroll: true });
-  }
-
-  const returnToInvoice = () => {
-    if (!document.body.contains(overlay)) return;
-    ['.commerce-lines-head', '.invoice-product-tools', '#commerceInvoiceLines', '#invoiceAddLine'].forEach(sel => {
-      const node = mount.querySelector<HTMLElement>(sel);
-      if (node) placeholder.appendChild(node);
+  let returned=false;
+  const returnToInvoice=()=>{
+    if(returned)return; returned=true;
+    selectors.forEach(selector=>{
+      const node=mount.querySelector<HTMLElement>(selector);
+      if(node)placeholder.appendChild(node);
     });
-    const searchBack = placeholder.querySelector<HTMLInputElement>('#invoiceProductSearch');
-    if (searchBack) delete searchBack.dataset.searchBound;
+    const restoredSearch=placeholder.querySelector<HTMLInputElement>('#invoiceProductSearch');
+    if(restoredSearch)delete restoredSearch.dataset.searchBound;
     overlay.remove();
     updateInvoiceTotals();
-    const count = placeholder.querySelectorAll('#commerceInvoiceLines .commerce-line').length;
-    const summary = document.querySelector('#invoiceItemsSummary') as HTMLElement | null;
-    if (summary) summary.textContent = count ? `${fa(count)} قلم ثبت‌شده` : 'بدون قلم';
-    document.querySelector<HTMLButtonElement>('#invoiceOpenItems')?.focus({preventScroll:true});
+    const count=placeholder.querySelectorAll('#commerceInvoiceLines .commerce-line').length;
+    const summary=panel?.querySelector<HTMLElement>('#invoiceItemsSummary')
+      ||document.querySelector<HTMLElement>('#invoiceItemsSummary');
+    if(summary)summary.textContent=count?`${fa(count)} قلم ثبت‌شده`:'بدون قلم';
+    panel?.querySelector<HTMLButtonElement>('#invoiceOpenItems')?.focus({preventScroll:true});
   };
-  overlay.querySelector('#invoiceItemsBack')!.addEventListener('click', returnToInvoice);
-  overlay.addEventListener('keydown', event => {
-    if ((event as KeyboardEvent).key === 'Escape') returnToInvoice();
-  });
+  overlay.querySelector<HTMLButtonElement>('#invoiceItemsBack')!.onclick=returnToInvoice;
+  overlay.addEventListener('keydown',event=>{if((event as KeyboardEvent).key==='Escape')returnToInvoice();});
 }
 
 async function render():Promise<void> {
@@ -1489,8 +1488,6 @@ async function render():Promise<void> {
   }));
   if(activeCommerceSection==='sale'||activeCommerceSection==='purchase'){
     addInvoiceLine(); addInvoicePaymentRow();
-    const itemSummary=el<HTMLElement>('#invoiceItemsSummary');
-    if(itemSummary)itemSummary.textContent='۱ قلم آمادهٔ ثبت';
   }
   bind();
   if(!suppressCommerceSheetReopen && reopenSheet){
@@ -1622,7 +1619,8 @@ function bind():void {
       toast(kind==='expense'?'هزینه ثبت و سند حسابداری صادر شد.':'درآمد ثبت و سند حسابداری صادر شد.','success');
     }catch(e){toast(e instanceof Error?e.message:'خطا در ثبت هزینه/درآمد','error')}
   });
-  if(el<HTMLButtonElement>('#invoiceOpenItems')) el<HTMLButtonElement>('#invoiceOpenItems')!.onclick=()=>openInvoiceItemsSheet();
+  const openItemsButton=el<HTMLButtonElement>('#invoiceOpenItems');
+  if(openItemsButton)openItemsButton.onclick=(event)=>{event.preventDefault();openInvoiceItemsSheet();};
   el<HTMLButtonElement>('#invoiceAddParty')?.addEventListener('click',()=>{
     openPartyFormSheet({
       preferType:isSaleInvoiceType(activeInvoiceType)?'customer':'supplier',
