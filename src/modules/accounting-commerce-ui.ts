@@ -1144,7 +1144,7 @@ async function openCommercePanelSheet(section:CommercePanelSection):Promise<void
     void render().finally(()=>{suppressCommerceSheetReopen=false;});
   };
   overlay.querySelector('#commercePanelClose')?.addEventListener('click',close);
-  // تقویم و جستجوی کالا پس از انتقال به برگه
+  // پس از انتقال DOM: تقویم + اتصال مجدد همه دکمه‌های فاکتور
   queueMicrotask(() => {
     const invDate = overlay.querySelector<HTMLInputElement>('#invoiceDate') || el<HTMLInputElement>('#invoiceDate');
     if (invDate) {
@@ -1155,6 +1155,7 @@ async function openCommercePanelSheet(section:CommercePanelSection):Promise<void
       attachJalaliCalendar(invDate, btn, panel);
     }
     enhanceDateFields(overlay);
+    wireInvoiceFormControls(overlay);
   });
 
 }
@@ -1530,8 +1531,115 @@ function startInvoiceEdit(invoiceId:string):void {
 }
 function cancelInvoiceEdit():void {editingInvoiceId=null;render()}
 
+async function saveInvoiceDraft(quiet=false):Promise<string|null>{
+  if(!commerce)return null;
+  try{
+    const type=el<HTMLInputElement>('#invoiceType')!.value as InvoiceType;
+    const invoiceNo=el<HTMLInputElement>('#invoiceNumber')!.value.trim();
+    if(!invoiceNo)throw new Error('شماره فاکتور را وارد کنید.');
+    if(!el<HTMLSelectElement>('#invoiceParty')!.value)throw new Error('طرف حساب را انتخاب کنید.');
+    if(commerce.invoices.some(i=>i.id!==editingInvoiceId&&i.type===type&&i.number===invoiceNo))throw new Error('شماره فاکتور در این نوع فاکتور تکراری است.');
+    const lineHost=document.querySelector<HTMLElement>('#commerceInvoiceLines');
+    const rows=[...(lineHost?lineHost.querySelectorAll<HTMLElement>('.commerce-line'):document.querySelectorAll<HTMLElement>('.commerce-line'))];
+    if(!rows.length)throw new Error('حداقل یک قلم به فاکتور اضافه کنید.');
+    const lines=rows.map(row=>{
+      const q=Number(digits(row.querySelector<HTMLInputElement>('[data-line-qty]')!.value).replace(',','.'));
+      if(!Number.isFinite(q)||q<=0||q>999999999)throw new Error('تعداد نامعتبر است.');
+      const productId=row.querySelector<HTMLInputElement>('[data-line-product]')!.value;
+      const product=products.find(p=>p.id===productId);
+      const description=row.querySelector<HTMLInputElement>('[data-line-desc]')!.value||(product?.name||'');
+      if(!description.trim())throw new Error('شرح هر ردیف را وارد کنید.');
+      return {description,unit:row.querySelector<HTMLInputElement>('[data-line-unit]')!.value,quantityMilli:Math.round(q*1000),unitPriceRial:parseMoneyToRial(digits(row.querySelector<HTMLInputElement>('[data-line-price]')!.value),currency),discountRial:parseMoneyToRial(digits(row.querySelector<HTMLInputElement>('[data-line-discount]')!.value||'0'),currency),...(product?{productId:product.id,warehouse:product.warehouse||'انبار اصلی'}:{})};
+    });
+    const invoiceDate=digits(el<HTMLInputElement>('#invoiceDate')!.value);
+    const fiscalPeriodId=invoicePeriodForDate(invoiceDate);
+    const payload={type,number:el<HTMLInputElement>('#invoiceNumber')!.value,date:invoiceDate,dueDate:'',paymentTerms:'',paymentParts:[] as InvoicePaymentPart[],fiscalPeriodId,partyId:el<HTMLSelectElement>('#invoiceParty')!.value,description:el<HTMLInputElement>('#invoiceDescription')!.value,notes:el<HTMLTextAreaElement>('#invoiceNotes')!.value,taxRateBps:Math.round(Number(digits(el<HTMLInputElement>('#invoiceTaxRate')!.value||'0').replace(',','.'))*100),lines,taxRial:parseMoneyToRial(digits(el<HTMLInputElement>('#invoiceTax')!.value||'0'),currency)};
+    let savedId='';
+    if(editingInvoiceId){
+      const next=updateDraftInvoice(editingInvoiceId,payload,commerce);
+      savedId=editingInvoiceId;
+      editingInvoiceId=null;
+      await persist(next);
+      if(!quiet)toast('پیش‌نویس ذخیره شد','success');
+    }else{
+      const invoice=buildInvoice(payload,commerce.parties);
+      savedId=invoice.id;
+      const next={...commerce,invoices:[...commerce.invoices,invoice]};
+      await persist(next);
+      if(!quiet)toast('پیش‌نویس ذخیره شد','success');
+    }
+    return savedId;
+  }catch(e){
+    toast(e instanceof Error?e.message:'خطا در ذخیره فاکتور','error');
+    return null;
+  }
+}
+
+/** اتصال مجدد دکمه‌های فاکتور بعد از انتقال DOM به پنل تمام‌صفحه */
+function wireInvoiceFormControls(root:ParentNode=document):void {
+  const q=<T extends HTMLElement>(sel:string)=>root.querySelector<T>(sel)||document.querySelector<T>(sel);
+  const openItems=q<HTMLButtonElement>('#invoiceOpenItems');
+  if(openItems){
+    openItems.onclick=(event)=>{event.preventDefault();event.stopPropagation();openInvoiceItemsSheet();};
+  }
+  const addParty=q<HTMLButtonElement>('#invoiceAddParty');
+  if(addParty){
+    addParty.onclick=(event)=>{
+      event.preventDefault();
+      openPartyFormSheet({
+        preferType:isSaleInvoiceType(activeInvoiceType)?'customer':'supplier',
+        selectAfterSave:true,
+      });
+    };
+  }
+  const party=q<HTMLSelectElement>('#invoiceParty');
+  if(party){
+    party.disabled=false;
+    party.style.pointerEvents='auto';
+    party.style.position='relative';
+    party.style.zIndex='2';
+  }
+  const saveBtn=q<HTMLButtonElement>('#invoiceSave');
+  if(saveBtn){
+    saveBtn.onclick=async(event)=>{event.preventDefault();await saveInvoiceDraft(false);};
+  }
+  const settleBtn=q<HTMLButtonElement>('#invoiceSettle');
+  if(settleBtn){
+    settleBtn.onclick=async(event)=>{
+      event.preventDefault();
+      if(!commerce)return;
+      settleBtn.disabled=true;
+      const prev=settleBtn.textContent;
+      settleBtn.textContent='در حال آماده‌سازی...';
+      try{
+        suppressCommerceSheetReopen=true;
+        const savedId=await saveInvoiceDraft(true);
+        if(!savedId)return;
+        commerce=await loadCommerceData();
+        const target=commerce.invoices.find(i=>i.id===savedId);
+        if(!target){toast('فاکتور برای تسویه آماده نشد.','error');return;}
+        if(target.status!=='draft'){toast('این فاکتور قبلاً قطعی شده است.','error');return;}
+        if(target.type==='proforma'){toast('پیش‌فاکتور قابل تسویه حسابداری نیست.','error');return;}
+        toast('پیش‌نویس ذخیره شد — تسویه را تکمیل کنید.','success');
+        openInvoiceSettlementSheet(target.id);
+      }catch(e){
+        toast(e instanceof Error?e.message:'خطا در آماده‌سازی تسویه','error');
+      }finally{
+        suppressCommerceSheetReopen=false;
+        settleBtn.disabled=false;
+        settleBtn.textContent=prev||'تسویه درجا';
+      }
+    };
+  }
+  const cancelBtn=q<HTMLButtonElement>('#invoiceCancelEdit');
+  if(cancelBtn){
+    cancelBtn.onclick=(event)=>{event.preventDefault();cancelInvoiceEdit();};
+  }
+}
+
 function bind():void {
   queueMicrotask(()=>enhanceDateFields(document));
+  wireInvoiceFormControls(document);
   const updateMonthComparison=()=>{const first=el<HTMLSelectElement>('#managementCompareFirst')?.value||'';const second=el<HTMLSelectElement>('#managementCompareSecond')?.value||'';const host=el<HTMLDivElement>('#managementMonthComparison');if(!host)return;const metrics=[['فروش قطعی','salesRial'],['سود ناخالص','grossProfitRial'],['هزینه ثبت‌شده گروه ۶','expensesRial'],['دریافت قطعی','receiptsRial'],['پرداخت قطعی','paymentsRial'],['مانده فعلی مطالبات','receivableRial']] as const;const rows=(window as any).__anbarinManagementCompareRows as Array<Record<string,any>>|undefined;const a=rows?.find(x=>x.month===first),b=rows?.find(x=>x.month===second);if(!a||!b){host.innerHTML='<p class="hint">برای مقایسه، داده ماهانه کافی وجود ندارد.</p>';return;}host.innerHTML=`<div class="table-wrap"><table class="data-table"><thead><tr><th>شاخص</th><th>${first}</th><th>${second}</th><th>اختلاف (ماه دوم − اول)</th><th>تغییر درصدی</th></tr></thead><tbody>${metrics.map(([label,key])=>{const av=Number(a[key]||0),bv=Number(b[key]||0),delta=bv-av,pct=av===0?null:delta/Math.abs(av)*100;return `<tr><td>${label}</td><td>${money(av)}</td><td>${money(bv)}</td><td>${delta>0?'+':''}${money(delta)}</td><td>${pct===null?'—':`${pct>0?'+':''}${pct.toFixed(1)}٪`}</td></tr>`}).join('')}</tbody></table></div><p class="hint">درصد تغییر نسبت به ماه اول محاسبه می‌شود؛ اگر مقدار ماه اول صفر باشد، درصد تغییر قابل محاسبه نیست.</p>`;};
   document.querySelectorAll<HTMLSelectElement>('#managementCompareFirst,#managementCompareSecond').forEach(select=>select.addEventListener('change',updateMonthComparison));
   el<HTMLSelectElement>('#managementAnomalyThreshold')?.addEventListener('change',()=>{const threshold=Number(el<HTMLSelectElement>('#managementAnomalyThreshold')?.value||20);const host=el<HTMLDivElement>('#managementAnomalyAlerts');if(!host)return;const rows=(window as any).__anbarinManagementCompareRows as ManagementMonthRow[]|undefined;const alerts=detectManagementMonthAnomalies(rows||[],threshold);host.innerHTML=alerts.length?`<div class="table-wrap"><table class="data-table"><thead><tr><th>وضعیت</th><th>شاخص</th><th>بازه مقایسه</th><th>مقدار قبلی</th><th>مقدار جدید</th><th>تغییر</th></tr></thead><tbody>${alerts.map(a=>`<tr><td>${a.severity==='warning'?'نیازمند بررسی':'بهبود'}</td><td>${a.label}</td><td>${esc(a.previousMonth)} ← ${esc(a.month)}</td><td>${money(a.previousValue)}</td><td>${money(a.currentValue)}</td><td>${a.percentChange>0?'+':''}${a.percentChange.toFixed(1)}٪</td></tr>`).join('')}</tbody></table></div><p class="hint">کاهش فروش/سود/دریافت و افزایش هزینه/پرداخت/مطالبات نیازمند بررسی است.</p>`:'<p class="hint">در آستانه انتخابی تغییر غیرعادی معناداری پیدا نشد؛ ماه‌های با مبنای صفر برای جلوگیری از درصد گمراه‌کننده نادیده گرفته می‌شوند.</p>'});
@@ -1622,14 +1730,7 @@ function bind():void {
       toast(kind==='expense'?'هزینه ثبت و سند حسابداری صادر شد.':'درآمد ثبت و سند حسابداری صادر شد.','success');
     }catch(e){toast(e instanceof Error?e.message:'خطا در ثبت هزینه/درآمد','error')}
   });
-  const openItemsButton=el<HTMLButtonElement>('#invoiceOpenItems');
-  if(openItemsButton)openItemsButton.onclick=(event)=>{event.preventDefault();openInvoiceItemsSheet();};
-  el<HTMLButtonElement>('#invoiceAddParty')?.addEventListener('click',()=>{
-    openPartyFormSheet({
-      preferType:isSaleInvoiceType(activeInvoiceType)?'customer':'supplier',
-      selectAfterSave:true,
-    });
-  });
+  // دکمه‌های فاکتور (اقلام / شخص / پیش‌نویس / تسویه) در wireInvoiceFormControls
   el<HTMLButtonElement>('#partySaveBtn')?.addEventListener('click',async()=>{
     const saved=await savePartyFromForm(false);
     if(saved)await render();
@@ -1680,75 +1781,8 @@ function bind():void {
   el<HTMLInputElement>('#invoiceTax')?.addEventListener('input',updateInvoiceTotals);
   el<HTMLButtonElement>('#invoiceAddPayment')?.addEventListener('click',()=>addInvoicePaymentRow());el<HTMLDivElement>('#invoicePaymentRows')?.addEventListener('input',updateInvoiceTotals);el<HTMLDivElement>('#invoicePaymentRows')?.addEventListener('change',updateInvoiceTotals);
   el<HTMLInputElement>('#invoiceTaxRate')?.addEventListener('change',applyInvoiceTaxRate);
-  const saveInvoiceDraft=async(quiet=false):Promise<string|null>=>{
-    if(!commerce)return null;
-    try{
-      const type=el<HTMLInputElement>('#invoiceType')!.value as InvoiceType;
-      const invoiceNo=el<HTMLInputElement>('#invoiceNumber')!.value.trim();
-      if(!invoiceNo)throw new Error('شماره فاکتور را وارد کنید.');
-      if(!el<HTMLSelectElement>('#invoiceParty')!.value)throw new Error('طرف حساب را انتخاب کنید.');
-      if(commerce.invoices.some(i=>i.id!==editingInvoiceId&&i.type===type&&i.number===invoiceNo))throw new Error('شماره فاکتور در این نوع فاکتور تکراری است.');
-      const rows=[...document.querySelectorAll<HTMLElement>('.commerce-line')];
-      if(!rows.length)throw new Error('حداقل یک قلم به فاکتور اضافه کنید.');
-      const lines=rows.map(row=>{
-        const q=Number(digits(row.querySelector<HTMLInputElement>('[data-line-qty]')!.value).replace(',','.'));
-        if(!Number.isFinite(q)||q<=0||q>999999999)throw new Error('تعداد نامعتبر است.');
-        const productId=row.querySelector<HTMLInputElement>('[data-line-product]')!.value;
-        const product=products.find(p=>p.id===productId);
-        const description=row.querySelector<HTMLInputElement>('[data-line-desc]')!.value||(product?.name||'');
-        if(!description.trim())throw new Error('شرح هر ردیف را وارد کنید.');
-        return {description,unit:row.querySelector<HTMLInputElement>('[data-line-unit]')!.value,quantityMilli:Math.round(q*1000),unitPriceRial:parseMoneyToRial(digits(row.querySelector<HTMLInputElement>('[data-line-price]')!.value),currency),discountRial:parseMoneyToRial(digits(row.querySelector<HTMLInputElement>('[data-line-discount]')!.value||'0'),currency),...(product?{productId:product.id,warehouse:product.warehouse||'انبار اصلی'}:{})};
-      });
-      const invoiceDate=digits(el<HTMLInputElement>('#invoiceDate')!.value);
-      const fiscalPeriodId=invoicePeriodForDate(invoiceDate);
-      const payload={type,number:el<HTMLInputElement>('#invoiceNumber')!.value,date:invoiceDate,dueDate:'',paymentTerms:'',paymentParts:[] as InvoicePaymentPart[],fiscalPeriodId,partyId:el<HTMLSelectElement>('#invoiceParty')!.value,description:el<HTMLInputElement>('#invoiceDescription')!.value,notes:el<HTMLTextAreaElement>('#invoiceNotes')!.value,taxRateBps:Math.round(Number(digits(el<HTMLInputElement>('#invoiceTaxRate')!.value||'0').replace(',','.'))*100),lines,taxRial:parseMoneyToRial(digits(el<HTMLInputElement>('#invoiceTax')!.value||'0'),currency)};
-      let savedId='';
-      if(editingInvoiceId){
-        const next=updateDraftInvoice(editingInvoiceId,payload,commerce);
-        savedId=editingInvoiceId;
-        editingInvoiceId=null;
-        await persist(next);
-        if(!quiet)toast('پیش‌نویس ذخیره شد','success');
-      }else{
-        const invoice=buildInvoice(payload,commerce.parties);
-        savedId=invoice.id;
-        const next={...commerce,invoices:[...commerce.invoices,invoice]};
-        await persist(next);
-        if(!quiet)toast('پیش‌نویس ذخیره شد','success');
-      }
-      return savedId;
-    }catch(e){
-      toast(e instanceof Error?e.message:'خطا در ذخیره فاکتور','error');
-      return null;
-    }
-  };
-  el<HTMLButtonElement>('#invoiceSave')?.addEventListener('click',async()=>{await saveInvoiceDraft(false);});
-  el<HTMLButtonElement>('#invoiceSettle')?.addEventListener('click',async()=>{
-    if(!commerce)return;
-    const settleBtn=el<HTMLButtonElement>('#invoiceSettle');
-    if(settleBtn){settleBtn.disabled=true;settleBtn.textContent='در حال آماده‌سازی...';}
-    try{
-      // همیشه آخرین محتوای فرم ذخیره شود، بعد برگه تسویه باز شود
-      suppressCommerceSheetReopen=true;
-      const savedId=await saveInvoiceDraft(true);
-      suppressCommerceSheetReopen=false;
-      if(!savedId)return;
-      commerce=await loadCommerceData();
-      const target=commerce.invoices.find(i=>i.id===savedId);
-      if(!target){toast('فاکتور برای تسویه آماده نشد.','error');return;}
-      if(target.status!=='draft'){toast('این فاکتور قبلاً قطعی شده است.','error');return;}
-      if(target.type==='proforma'){toast('پیش‌فاکتور قابل تسویه حسابداری نیست.','error');return;}
-      toast('پیش‌نویس ذخیره شد — تسویه را تکمیل کنید.','success');
-      openInvoiceSettlementSheet(target.id);
-    }catch(e){
-      toast(e instanceof Error?e.message:'خطا در آماده‌سازی تسویه','error');
-    }finally{
-      suppressCommerceSheetReopen=false;
-      if(settleBtn){settleBtn.disabled=false;settleBtn.textContent='تسویه درجا';}
-    }
-  });
+  // ذخیره / تسویه / برگه اقلام / شخص از wireInvoiceFormControls وصل می‌شوند
   document.querySelectorAll<HTMLElement>('[data-edit-invoice]').forEach(b=>b.addEventListener('click',()=>startInvoiceEdit(b.dataset.editInvoice!)));
-  el<HTMLButtonElement>('#invoiceCancelEdit')?.addEventListener('click',cancelInvoiceEdit);
   document.querySelectorAll<HTMLElement>('[data-print-invoice]').forEach(b=>b.addEventListener('click',()=>printInvoice(b.dataset.printInvoice!)));
   document.querySelectorAll<HTMLElement>('[data-post-invoice]').forEach(b=>b.addEventListener('click',()=>openInvoiceSettlementSheet(b.dataset.postInvoice!)));
   const refreshCashInvoices=()=>{if(!commerce)return;const type=el<HTMLSelectElement>('#cashType')!.value;const partyId=el<HTMLSelectElement>('#cashParty')!.value;const eligible=commerce.invoices.filter(i=>i.status==='posted'&&i.partyId===partyId&&((type==='receipt'&&i.type==='sale')||(type==='payment'&&i.type==='purchase'))&&invoiceOutstanding(i.id,commerce!)>0);el<HTMLSelectElement>('#cashInvoice')!.innerHTML='<option value="">بدون تخصیص (علی‌الحساب)</option>'+eligible.map(i=>`<option value="${esc(i.id)}">${esc(i.number)} — مانده ${money(invoiceOutstanding(i.id,commerce!))}</option>`).join('')};

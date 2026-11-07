@@ -1325,65 +1325,158 @@ body.accounting-sheet-open { overflow: hidden; }
   border-bottom:1px solid var(--border-color,#e8ecf1);
   font-size:1.15rem;
 }
-#accountingCommerceWorkspace .invoice-header-grid{
-  display:grid;
-  grid-template-columns:repeat(3,minmax(0,1fr));
-  gap:12px 14px;
-  margin-bottom:16px;
+/* کنترل‌های فاکتور باید همیشه قابل کلیک باشند */
+#commercePanelSheet .commerce-invoice-card,
+#commercePanelSheet .invoice-header-grid,
+#commercePanelSheet .invoice-items-block,
+#commercePanelSheet .invoice-action-bar {
+  pointer-events: auto;
+  position: relative;
+  z-index: 1;
 }
-@media(max-width:700px){
-  #accountingCommerceWorkspace .invoice-header-grid{grid-template-columns:1fr}
+#commercePanelSheet select,
+#commercePanelSheet input,
+#commercePanelSheet button,
+#commercePanelSheet textarea {
+  pointer-events: auto !important;
+  position: relative;
+  z-index: 2;
 }
-#accountingCommerceWorkspace .invoice-items-block{
-  padding:14px;
-  border:1px solid var(--border-color,#e2e8f0);
-  border-radius:14px;
-  background:var(--surface-muted,#f8fafc);
-  margin:4px 0 12px;
+#commercePanelSheet #invoiceParty {
+  z-index: 3;
 }
-#accountingCommerceWorkspace .invoice-items-block .commerce-lines-head{
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  gap:10px;
-  margin:0 0 10px;
-  padding:0;
-  border:0;
+
+/* سربرگ فاکتور: هر فیلد در یک ردیف */
+#accountingCommerceWorkspace .invoice-header-grid,
+#commercePanelSheet .invoice-header-grid{
+  display:grid !important;
+  grid-template-columns:1fr !important;
+  gap:10px !important;
+  margin:8px 0 12px !important;
+  align-items:stretch;
 }
-#accountingCommerceWorkspace .invoice-action-bar{
-  display:flex;
-  gap:10px;
-  flex-wrap:wrap;
-  margin:14px 0 16px;
-}
-#accountingCommerceWorkspace .commerce-invoice-summary{
-  display:grid;
-  grid-template-columns:repeat(3,minmax(0,1fr));
-  gap:10px;
-  margin:14px 0 4px;
-  padding:12px 14px;
-  border-radius:12px;
-  border:1px solid var(--border-color,#e2e8f0);
-  background:var(--surface-muted,#f8fafc);
-}
-#accountingCommerceWorkspace .commerce-invoice-summary>div{
+#accountingCommerceWorkspace .invoice-header-grid > .field,
+#commercePanelSheet .invoice-header-grid > .field{
   display:flex;
   flex-direction:column;
   gap:4px;
+  min-width:0;
+  width:100%;
+  margin:0;
 }
-#accountingCommerceWorkspace .commerce-invoice-summary .grand b{
-  font-size:1.1rem;
-  color:#0f172a;
+#accountingCommerceWorkspace .invoice-header-grid input:not([type="hidden"]),
+#accountingCommerceWorkspace .invoice-header-grid select,
+#commercePanelSheet .invoice-header-grid input:not([type="hidden"]),
+#commercePanelSheet .invoice-header-grid select{
+  width:100%;
+  min-width:0;
+  max-width:100%;
+  min-height:40px;
 }
-[data-theme='dark'] #accountingCommerceWorkspace .commerce-invoice-summary .grand b{color:#f8fafc}
-@media(max-width:560px){
-  #accountingCommerceWorkspace .commerce-invoice-summary{grid-template-columns:1fr}
+#accountingCommerceWorkspace .invoice-header-grid .field > div,
+#commercePanelSheet .invoice-header-grid .field > div,
+#accountingCommerceWorkspace .invoice-jalali-date,
+#commercePanelSheet .invoice-jalali-date{
+  display:flex;
+  gap:6px;
+  min-width:0;
+  width:100%;
+  align-items:stretch;
+}
+#accountingCommerceWorkspace .invoice-jalali-date input,
+#commercePanelSheet .invoice-jalali-date input{
+  flex:1 1 auto;
+  min-width:0;
+}
+#accountingCommerceWorkspace #invoiceParty,
+#commercePanelSheet #invoiceParty{
+  flex:1 1 auto;
+  min-width:0;
+  width:100%;
 }
 
-#accountingCommerceWorkspace .invoice-items-toolbar{
-  display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px;
+/* کادر اقلام فشرده — فقط نوار ابزار + خلاصه */
+#accountingCommerceWorkspace .invoice-items-block,
+#commercePanelSheet .invoice-items-block{
+  padding:8px 10px !important;
+  border:1px solid var(--border-color,#e2e8f0);
+  border-radius:10px;
+  background:var(--surface-muted,#f8fafc);
+  margin:4px 0 10px;
+  min-height:0 !important;
 }
-#accountingCommerceWorkspace .invoice-items-toolbar b{font-size:1rem}
+#accountingCommerceWorkspace .invoice-items-block .commerce-lines-head,
+#commercePanelSheet .invoice-items-block .commerce-lines-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  margin:0 0 6px;
+  padding:0;
+  border:0;
+}
+#accountingCommerceWorkspace .invoice-items-toolbar,
+#commercePanelSheet .invoice-items-toolbar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  margin:0;
+  padding:0;
+  min-height:0;
+}
+#accountingCommerceWorkspace .invoice-items-toolbar b,
+#commercePanelSheet .invoice-items-toolbar b{
+  font-size:.95rem;
+}
+#accountingCommerceWorkspace #invoiceItemsSummary,
+#commercePanelSheet #invoiceItemsSummary{
+  margin:2px 0 0 !important;
+  font-size:.85rem;
+  line-height:1.3;
+}
+
+#accountingCommerceWorkspace .invoice-action-bar,
+#commercePanelSheet .invoice-action-bar{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  margin:10px 0 12px;
+}
+#accountingCommerceWorkspace .invoice-action-bar .btn,
+#commercePanelSheet .invoice-action-bar .btn{
+  min-height:40px;
+}
+
+#accountingCommerceWorkspace .commerce-invoice-summary,
+#commercePanelSheet .commerce-invoice-summary{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:8px;
+  margin:10px 0 4px;
+  padding:10px 12px;
+  border-radius:10px;
+  border:1px solid var(--border-color,#e2e8f0);
+  background:var(--surface-muted,#f8fafc);
+  max-width:none;
+}
+#accountingCommerceWorkspace .commerce-invoice-summary>div,
+#commercePanelSheet .commerce-invoice-summary>div{
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+}
+#accountingCommerceWorkspace .commerce-invoice-summary .grand b,
+#commercePanelSheet .commerce-invoice-summary .grand b{
+  font-size:1.05rem;
+  color:#0f172a;
+}
+[data-theme='dark'] #accountingCommerceWorkspace .commerce-invoice-summary .grand b,
+[data-theme='dark'] #commercePanelSheet .commerce-invoice-summary .grand b{color:#f8fafc}
+@media(max-width:560px){
+  #accountingCommerceWorkspace .commerce-invoice-summary,
+  #commercePanelSheet .commerce-invoice-summary{grid-template-columns:1fr}
+}
 
 .accounting-home-links{
   display:flex;flex-wrap:wrap;gap:10px;margin-top:16px;
@@ -2288,42 +2381,10 @@ input[placeholder*="140"], input[placeholder*="14"] {
 }
 #commercePanelSheet .commerce-invoice-card *,
 #invoiceItemsSheet * { box-sizing: border-box; }
-#commercePanelSheet .invoice-header-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  align-items: end;
-  margin: 12px 0 16px;
-}
-#commercePanelSheet .invoice-header-grid > .field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-  width: 100%;
-  margin: 0;
-}
-#commercePanelSheet .invoice-header-grid input:not([type="hidden"]),
-#commercePanelSheet .invoice-header-grid select {
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-  min-height: 42px;
-}
-#commercePanelSheet #invoiceParty { flex: 1 1 0; width: 100%; min-width: 0; }
-#commercePanelSheet .invoice-header-grid .field > div,
-#commercePanelSheet .invoice-jalali-date { display: flex; gap: 6px; min-width: 0; width: 100%; }
-#commercePanelSheet .invoice-jalali-date input { flex: 1 1 auto; min-width: 0; }
+/* سربرگ و اقلام فاکتور از قواعد یک‌ردیفه بالاتر پیروی می‌کنند */
 #commercePanelSheet .invoice-items-block {
-  width: 100%; min-width: 0; padding: 12px;
-  border: 1px solid var(--border-color, #d8dee8); border-radius: 12px;
-}
-#commercePanelSheet .invoice-items-toolbar {
-  display: flex; align-items: center; justify-content: space-between;
-  flex-wrap: wrap; gap: 10px;
-}
-#commercePanelSheet .commerce-invoice-summary {
-  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px;
+  width: 100%;
+  min-width: 0;
 }
 #commercePanelSheet .commerce-line,
 #invoiceItemsSheet .commerce-line {
@@ -2359,7 +2420,6 @@ input[placeholder*="140"], input[placeholder*="14"] {
 #invoiceItemsSheet .invoice-live-search { min-width: 0; }
 #invoiceItemsSheet .invoice-live-search input { width: 100%; min-width: 0; }
 @media (max-width: 760px) {
-  #commercePanelSheet .invoice-header-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   #commercePanelSheet .commerce-line,
   #invoiceItemsSheet .commerce-line { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 10px; }
   #commercePanelSheet .commerce-line label:has([data-line-desc]),
@@ -2368,10 +2428,8 @@ input[placeholder*="140"], input[placeholder*="14"] {
   #invoiceItemsSheet .commerce-line label:has([data-line-total]) { grid-column: 1 / -1; }
 }
 @media (max-width: 520px) {
-  #commercePanelSheet .invoice-header-grid,
   #commercePanelSheet .commerce-invoice-summary { grid-template-columns: minmax(0, 1fr); }
   #commercePanelSheet .commerce-invoice-card { padding: 10px; }
-  #commercePanelSheet .invoice-items-block { padding: 10px; }
   #invoiceItemsSheet .invoice-product-tools { grid-template-columns: minmax(0, 1fr) auto; }
   #invoiceItemsSheet .invoice-product-tools .invoice-live-search { grid-column: 1 / -1; }
   #commercePanelSheet .invoice-action-bar .btn { flex: 1 1 100%; width: 100%; }
